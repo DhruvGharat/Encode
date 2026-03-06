@@ -1,197 +1,244 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Mic,
-  Square,
-  Play,
-  RefreshCcw,
-  CheckCircle2,
-  Volume2,
-  Info,
-  ShieldCheck,
-  Activity,
-  ArrowRight
-} from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Mic, StopCircle, Upload, CheckCircle2, AlertCircle, Loader, Info } from 'lucide-react';
+import { speechService } from '../services/api';
 
 const SpeechTest = () => {
-  const [status, setStatus] = useState('idle'); // idle, recording, preview, uploading, complete
-  const [timer, setTimer] = useState(0);
-  const [waves, setWaves] = useState(new Array(40).fill(10));
+  const [phase, setPhase]           = useState('idle'); // idle | recording | review | uploading | done | error
+  const [duration, setDuration]     = useState(0);
+  const [result, setResult]         = useState(null);
+  const [error, setError]           = useState('');
+  const [hasPermission, setPerm]    = useState(null);
 
+  const mediaRecorderRef = useRef(null);
+  const chunksRef        = useRef([]);
+  const timerRef         = useRef(null);
+  const streamRef        = useRef(null);
+
+  // Request mic permission on mount
   useEffect(() => {
-    let interval;
-    if (status === 'recording') {
-      interval = setInterval(() => {
-        setTimer(p => p + 1);
-        setWaves(new Array(40).fill(0).map(() => Math.random() * 40 + 5));
-      }, 100);
-    }
-    return () => clearInterval(interval);
-  }, [status]);
+    navigator.mediaDevices?.getUserMedia({ audio: true })
+      .then((stream) => {
+        setPerm(true);
+        stream.getTracks().forEach((t) => t.stop()); // Stop immediately, just checking
+      })
+      .catch(() => setPerm(false));
+    return () => {
+      clearInterval(timerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
-  const startRecording = () => {
-    setStatus('recording');
-    setTimer(0);
+  const startRecording = async () => {
+    try {
+      setError('');
+      setDuration(0);
+      chunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      recorder.onstop = () => {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        setPhase('review');
+      };
+
+      recorder.start(100);
+      setPhase('recording');
+      timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+    } catch (err) {
+      setError('Microphone access denied. Please grant permission in your browser settings.');
+      setPerm(false);
+    }
   };
 
   const stopRecording = () => {
-    setStatus('preview');
+    clearInterval(timerRef.current);
+    mediaRecorderRef.current?.stop();
   };
 
-  const uploadAudio = () => {
-    setStatus('uploading');
-    setTimeout(() => {
-      setStatus('complete');
-    }, 2000);
+  const submitRecording = async () => {
+    setPhase('uploading');
+    const blob     = new Blob(chunksRef.current, { type: 'audio/webm' });
+    const formData = new FormData();
+    formData.append('audio', blob, 'speech-recording.webm');
+    formData.append('duration_secs', String(duration));
+
+    try {
+      const { data } = await speechService.upload(formData);
+      setResult(data.data);
+      setPhase('done');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Upload failed. Please try again.');
+      setPhase('error');
+    }
   };
+
+  const formatTime = (s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+
+  const getRiskColor = (risk) => ({ Low: '#6FCF97', Moderate: '#F59E0B', High: '#EF4444' }[risk] || '#4A90E2');
 
   return (
-    <div className="speech-container animate-fade-up">
-      <div className="container">
-        <header className="page-header-v2">
-          <div className="header-icon-v2 bg-purple-soft">
-            <Mic size={28} className="text-accent" />
-          </div>
-          <div className="header-text-v2">
-            <h1>Vocal Biomarker Analysis</h1>
-            <p>Our AI analyzes linguistic patterns, pitch stability, and speech pauses for cognitive detection.</p>
-          </div>
-        </header>
-
-        <div className="speech-layout-v2">
-          {/* Main Recording Workspace */}
-          <div className="workspace-v2 card-modern">
-            <div className="test-prompt-card">
-              <div className="badge-clinical">Clinical Prompt</div>
-              <h2>"The beautiful sun sets behind the distant mountains, painting the sky in deep shades of orange and purple."</h2>
-              <p className="instruction">Please read the sentence above clearly at your natural pace.</p>
-            </div>
-
-            <div className="recorder-v2">
-              {status === 'recording' && (
-                <div className="waveform-viz">
-                  {waves.map((h, i) => (
-                    <div key={i} className="wave-bar" style={{ height: `${h}px` }}></div>
-                  ))}
-                </div>
-              )}
-
-              <div className="timer-v2">
-                {Math.floor(timer / 600)}:{(Math.floor(timer / 10) % 60).toString().padStart(2, '0')}.{timer % 10}
-              </div>
-
-              <div className="controls-v2">
-                {status === 'idle' && (
-                  <button className="btn-rec-main" onClick={startRecording}>
-                    <Mic size={32} />
-                    <span>Start Recording</span>
-                  </button>
-                )}
-
-                {status === 'recording' && (
-                  <button className="btn-stop-main" onClick={stopRecording}>
-                    <Square size={24} fill="currentColor" />
-                    <span>Stop Analysis</span>
-                  </button>
-                )}
-
-                {(status === 'preview' || status === 'uploading') && (
-                  <div className="preview-actions">
-                    <button className="btn-outline-lg"><Play size={20} fill="currentColor" /> Preview</button>
-                    <button
-                      className="btn-primary-lg"
-                      onClick={uploadAudio}
-                      disabled={status === 'uploading'}
-                    >
-                      {status === 'uploading' ? 'Analyzing...' : 'Submit for AI Review'} <ArrowRight size={20} />
-                    </button>
-                    <button className="btn-icon-v2" onClick={() => setStatus('idle')}><RefreshCcw size={20} /></button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Right Sidebar */}
-          <aside className="speech-sidebar-v2">
-            <div className="card-modern metric-card-v2">
-              <h3><Activity size={18} className="text-accent" /> Live Spectrum</h3>
-              <div className="mock-spectrum">
-                <div className="spec-line"></div>
-                <div className="spec-peaks"></div>
-              </div>
-              <div className="biomarker-labels">
-                <div className="bio-item"><span>Neural Latency</span> <strong>12ms</strong></div>
-                <div className="bio-item"><span>Jitter (F0)</span> <strong>0.2%</strong></div>
-              </div>
-            </div>
-
-            <div className="card-modern ambient-info">
-              <div className="header-info"><ShieldCheck size={18} /> Noise Encryption</div>
-              <p>Background noise is automatically filtered using neural noise suppression (RNNoise).</p>
-            </div>
-
-            <div className="guidelines-v2">
-              <h4>Guidelines</h4>
-              <div className="guide-item-v2">
-                <Volume2 size={16} />
-                <span>Ensure a quiet environment</span>
-              </div>
-              <div className="guide-item-v2">
-                <CheckCircle2 size={16} />
-                <span>Speak clearly and steadily</span>
-              </div>
-            </div>
-          </aside>
+    <div className="speech-test-v2 container animate-fade-up">
+      <div className="speech-header">
+        <div className="icon-header-sq" style={{ background: 'linear-gradient(135deg, #8B5CF6, #7C3AED)' }}><Mic size={28} /></div>
+        <div>
+          <h1>Vocal Biomarker Analysis</h1>
+          <p>Speak naturally for 30–60 seconds. Our AI detects linguistic patterns indicative of cognitive change.</p>
         </div>
       </div>
 
+      {/* Guidelines */}
+      <div className="info-row">
+        {[
+          { icon: <Mic size={18} />, text: 'Read aloud naturally — describe what you see or tell a story' },
+          { icon: <Info size={18} />, text: 'Ensure a quiet environment for best biomarker accuracy' },
+          { icon: <CheckCircle2 size={18} />, text: 'Minimum 30-second recording recommended for full analysis' },
+        ].map((g, i) => <div key={i} className="guideline-pill"><span className="guide-icon">{g.icon}</span>{g.text}</div>)}
+      </div>
+
+      {/* Permission warning */}
+      {hasPermission === false && (
+        <div className="alert-block alert-warning">
+          <AlertCircle size={20} /><span>Microphone permission denied. Please enable it in your browser and refresh.</span>
+        </div>
+      )}
+
+      {error && phase === 'error' && (
+        <div className="alert-block alert-danger">
+          <AlertCircle size={20} /><span>{error}</span>
+        </div>
+      )}
+
+      {/* Main Card */}
+      <div className="card-modern speech-card">
+        {/* IDLE */}
+        {phase === 'idle' && (
+          <div className="phase-center">
+            <div className="mic-bubble"><Mic size={48} /></div>
+            <h2>Ready to Record</h2>
+            <p>Click the button below to start your 30–60 second vocal assessment.</p>
+            <button className="btn-record-start" onClick={startRecording} disabled={hasPermission === false}>
+              <Mic size={20} /> Begin Voice Assessment
+            </button>
+          </div>
+        )}
+
+        {/* RECORDING */}
+        {phase === 'recording' && (
+          <div className="phase-center">
+            <div className="mic-bubble recording-pulse"><Mic size={48} /></div>
+            <div className="timer-display">{formatTime(duration)}</div>
+            <p className="recording-hint">Recording in progress — speak clearly and naturally</p>
+            <div className="wave-visual">
+              {Array.from({ length: 20 }).map((_, i) => (
+                <div key={i} className="wave-bar" style={{ animationDelay: `${i * 0.07}s`, animationDuration: `${0.5 + Math.random() * 0.5}s` }} />
+              ))}
+            </div>
+            <button className="btn-record-stop" onClick={stopRecording}>
+              <StopCircle size={20} /> Stop Recording
+            </button>
+          </div>
+        )}
+
+        {/* REVIEW */}
+        {phase === 'review' && (
+          <div className="phase-center">
+            <div className="review-icon"><CheckCircle2 size={52} className="text-secondary" /></div>
+            <h2>Recording Complete</h2>
+            <p>Duration: <strong>{formatTime(duration)}</strong> · Audio captured successfully</p>
+            <div className="review-actions">
+              <button className="btn-submit-speech" onClick={submitRecording}>
+                <Upload size={20} /> Submit for AI Analysis
+              </button>
+              <button className="btn-rerecord" onClick={() => setPhase('idle')}>Re-record</button>
+            </div>
+          </div>
+        )}
+
+        {/* UPLOADING */}
+        {phase === 'uploading' && (
+          <div className="phase-center">
+            <Loader size={52} className="text-primary spin-icon" />
+            <h2>Analyzing Vocal Biomarkers</h2>
+            <p>Our neural network is processing your speech patterns...</p>
+            <style jsx>{`.spin-icon { animation: spin 1.5s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
+
+        {/* DONE */}
+        {phase === 'done' && result && (
+          <div className="results-grid-speech">
+            <div className="results-header-speech">
+              <CheckCircle2 size={40} className="text-secondary" />
+              <h2>Analysis Complete</h2>
+              <p style={{ color: 'var(--text-sub)' }}>Vocal biomarker assessment logged to your profile.</p>
+            </div>
+            <div className="biomarker-cards">
+              {[
+                { label: 'Speech Stability',  value: `${result.stability_pct}%`,   caption: 'Neural coherence index', color: getRiskColor(result.risk_level) },
+                { label: 'Temporal Jitter',   value: `${result.jitter_f0}%`,        caption: 'F0 perturbation ratio',  color: '#4A90E2' },
+                { label: 'Neural Latency',    value: `${result.neural_latency}ms`,  caption: 'Vocal processing speed', color: '#8B5CF6' },
+              ].map((m, i) => (
+                <div key={i} className="biomarker-card" style={{ borderTop: `3px solid ${m.color}` }}>
+                  <p className="bio-label">{m.label}</p>
+                  <span className="bio-value" style={{ color: m.color }}>{m.value}</span>
+                  <p className="bio-caption">{m.caption}</p>
+                </div>
+              ))}
+            </div>
+            <div className="risk-result-speech" style={{ background: `${getRiskColor(result.risk_level)}15`, border: `1px solid ${getRiskColor(result.risk_level)}30` }}>
+              <strong style={{ color: getRiskColor(result.risk_level) }}>Risk Level: {result.risk_level}</strong>
+              <p>{result.analysis_notes}</p>
+            </div>
+            <button className="btn-rerecord" onClick={() => { setPhase('idle'); setResult(null); }}>Record Another Sample</button>
+          </div>
+        )}
+      </div>
+
       <style jsx>{`
-        .bg-purple-soft { background: var(--accent-soft); }
-        .page-header-v2 { display: flex; align-items: center; gap: 24px; margin-bottom: 40px; }
-        .header-icon-v2 { width: 64px; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center; }
-        .header-text-v2 h1 { font-size: 2.2rem; margin-bottom: 8px; }
-        .header-text-v2 p { color: var(--text-sub); font-size: 1.1rem; }
-
-        .speech-layout-v2 { display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
-        .test-prompt-card { background: var(--background); padding: 40px; border-radius: var(--radius-md); text-align: center; margin-bottom: 40px; }
-        .badge-clinical { display: inline-block; background: var(--accent); color: white; padding: 4px 12px; border-radius: 4px; font-weight: 800; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 16px; }
-        .test-prompt-card h2 { font-size: 1.8rem; line-height: 1.4; color: var(--text-main); margin-bottom: 16px; }
-        .instruction { color: var(--text-sub); font-weight: 600; }
-
-        .recorder-v2 { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 32px; padding-bottom: 40px; }
-        
-        .waveform-viz { display: flex; align-items: center; gap: 4px; height: 60px; }
-        .wave-bar { width: 3px; background: var(--accent); border-radius: 2px; transition: height 0.1s ease; }
-        
-        .timer-v2 { font-family: monospace; font-size: 3rem; font-weight: 700; color: var(--text-main); }
-
-        .btn-rec-main { display: flex; flex-direction: column; align-items: center; gap: 12px; background: white; border: 2px solid var(--surface-alt); padding: 32px 48px; border-radius: 24px; cursor: pointer; transition: var(--transition); color: var(--accent); }
-        .btn-rec-main:hover { border-color: var(--accent); background: var(--accent-soft); transform: scale(1.05); }
-        .btn-rec-main span { font-weight: 800; font-size: 1.1rem; }
-
-        .btn-stop-main { display: flex; flex-direction: column; align-items: center; gap: 12px; background: var(--danger); color: white; padding: 32px 48px; border-radius: 24px; border: none; cursor: pointer; animation: pulse-soft 2s infinite; }
-        .btn-stop-main span { font-weight: 800; }
-
-        .preview-actions { display: flex; gap: 16px; align-items: center; }
-        .btn-icon-v2 { width: 56px; height: 56px; border-radius: 12px; border: 2px solid var(--surface-alt); display: flex; align-items: center; justify-content: center; color: var(--text-sub); background: white; cursor: pointer; }
-
-        .speech-sidebar-v2 { display: flex; flex-direction: column; gap: 24px; }
-        .metric-card-v2 h3 { margin-bottom: 20px; font-size: 1.1rem; display: flex; align-items: center; gap: 8px; }
-        
-        .mock-spectrum { height: 100px; background: #0f172a; border-radius: 12px; margin-bottom: 20px; overflow: hidden; position: relative; }
-        .spec-line { position: absolute; bottom: 0; width: 100%; height: 2px; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
-        .spec-peaks { position: absolute; inset: 0; background: linear-gradient(0deg, var(--accent) 0%, transparent 100%); opacity: 0.1; }
-
-        .biomarker-labels { display: grid; gap: 12px; }
-        .bio-item { display: flex; justify-content: space-between; font-size: 0.85rem; padding-bottom: 8px; border-bottom: 1px solid var(--surface-alt); }
-        .bio-item strong { color: var(--accent); }
-
-        .ambient-info { background: #fdf2f2; border: 1px solid #fee2e2; }
-        .header-info { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.85rem; color: #991b1b; margin-bottom: 8px; }
-        .ambient-info p { font-size: 0.85rem; color: #991b1b; opacity: 0.8; }
-
-        .guidelines-v2 h4 { margin-bottom: 16px; }
-        .guide-item-v2 { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 0.9rem; color: var(--text-sub); }
+        .speech-test-v2 { padding: 40px 0; max-width: 800px; }
+        .speech-header { display: flex; align-items: center; gap: 20px; margin-bottom: 32px; }
+        .icon-header-sq { width: 60px; height: 60px; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
+        .speech-header h1 { font-size: 2rem; margin-bottom: 6px; }
+        .speech-header p { color: var(--text-sub); }
+        .info-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 32px; }
+        .guideline-pill { display: flex; align-items: center; gap: 10px; background: white; padding: 10px 16px; border-radius: 30px; box-shadow: var(--shadow-sm); font-size: 0.85rem; color: var(--text-sub); font-weight: 500; }
+        .guide-icon { color: var(--primary); flex-shrink: 0; }
+        .alert-block { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 12px; margin-bottom: 24px; font-size: 0.9rem; font-weight: 600; }
+        .alert-warning { background: #fff7ed; color: #92400e; border: 1px solid #fde68a; }
+        .alert-danger  { background: #fff1f2; color: #9f1239; border: 1px solid #fecdd3; }
+        .speech-card { min-height: 420px; display: flex; align-items: center; justify-content: center; }
+        .phase-center { display: flex; flex-direction: column; align-items: center; gap: 20px; text-align: center; width: 100%; }
+        .phase-center h2 { font-size: 2rem; }
+        .phase-center p { color: var(--text-sub); max-width: 480px; }
+        .mic-bubble { width: 100px; height: 100px; border-radius: 50%; background: var(--surface-alt); display: flex; align-items: center; justify-content: center; color: var(--primary); }
+        .recording-pulse { animation: recordPulse 1.5s infinite; background: #fff1f2; color: #ef4444; }
+        @keyframes recordPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 0 20px rgba(239,68,68,0); } }
+        .timer-display { font-size: 3.5rem; font-weight: 800; color: #ef4444; letter-spacing: 0.05em; }
+        .recording-hint { font-size: 0.95rem; color: var(--text-sub); font-style: italic; }
+        .wave-visual { display: flex; align-items: center; gap: 3px; height: 50px; }
+        .wave-bar { width: 4px; background: linear-gradient(to top, var(--primary), #8B5CF6); border-radius: 2px; animation: waveAnim 0.8s ease-in-out infinite alternate; }
+        @keyframes waveAnim { 0% { height: 8px; } 100% { height: 40px; } }
+        .btn-record-start { display: flex; align-items: center; gap: 10px; padding: 16px 32px; background: var(--grad-primary); color: white; border: none; border-radius: 14px; font-size: 1.1rem; font-weight: 700; cursor: pointer; }
+        .btn-record-start:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-record-stop { display: flex; align-items: center; gap: 10px; padding: 16px 32px; background: #fff1f2; color: #ef4444; border: 1px solid #fecdd3; border-radius: 14px; font-size: 1.1rem; font-weight: 700; cursor: pointer; }
+        .review-icon { color: var(--secondary); }
+        .review-actions { display: flex; gap: 16px; }
+        .btn-submit-speech { display: flex; align-items: center; gap: 8px; padding: 14px 28px; background: var(--secondary); color: white; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; }
+        .btn-rerecord { padding: 12px 24px; background: var(--surface-alt); color: var(--text-main); border: none; border-radius: 12px; font-weight: 700; cursor: pointer; }
+        .results-grid-speech { width: 100%; display: flex; flex-direction: column; gap: 24px; align-items: center; }
+        .results-header-speech { text-align: center; }
+        .results-header-speech h2 { font-size: 1.8rem; }
+        .biomarker-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; width: 100%; }
+        .biomarker-card { background: var(--background); padding: 24px; border-radius: 16px; text-align: center; }
+        .bio-label { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+        .bio-value { font-size: 2.2rem; font-weight: 800; }
+        .bio-caption { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+        .risk-result-speech { width: 100%; padding: 20px 24px; border-radius: 14px; text-align: center; }
+        .risk-result-speech p { margin-top: 6px; color: var(--text-sub); font-size: 0.9rem; }
       `}</style>
     </div>
   );

@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import LandingPage from './pages/LandingPage';
@@ -46,35 +48,39 @@ const Layout = ({ children }) => {
 
 function App() {
   return (
-    <Router>
-      <div className="app">
-        <Navbar />
-        <Layout>
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/tests" element={<ClinicalTests />} />
-            <Route path="/tests/mmse" element={<MMSETest />} />
-            <Route path="/tests/moca" element={<MoCATest />} />
-            <Route path="/speech-test" element={<SpeechTest />} />
-            <Route path="/mri-upload" element={<MRIUpload />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/consult-doctor" element={<ConsultDoctor />} />
-          </Routes>
-        </Layout>
-      </div>
-      <style jsx>{`
-        .app {
-          min-height: 100vh;
-          display: flex;
-          flex-direction: column;
-        }
-      `}</style>
-    </Router>
+    <AuthProvider>
+      <Router>
+        <div className="app">
+          <Navbar />
+          <Layout>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+
+              {/* Protected routes */}
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/tests" element={<ProtectedRoute><ClinicalTests /></ProtectedRoute>} />
+              <Route path="/tests/mmse" element={<ProtectedRoute><MMSETest /></ProtectedRoute>} />
+              <Route path="/tests/moca" element={<ProtectedRoute><MoCATest /></ProtectedRoute>} />
+              <Route path="/speech-test" element={<ProtectedRoute><SpeechTest /></ProtectedRoute>} />
+              <Route path="/mri-upload" element={<ProtectedRoute><MRIUpload /></ProtectedRoute>} />
+              <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+              <Route path="/consult-doctor" element={<ProtectedRoute><ConsultDoctor /></ProtectedRoute>} />
+            </Routes>
+          </Layout>
+        </div>
+        <style jsx>{`
+          .app {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+          }
+        `}</style>
+      </Router>
+    </AuthProvider>
   );
 }
 
 export default App;
-

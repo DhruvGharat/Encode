@@ -1,50 +1,57 @@
-import axios from 'axios';
+import { api } from '../context/AuthContext';
 
-const API_BASE_URL = '/api';
-
-const api = axios.create({
-    baseURL: API_BASE_URL,
-    headers: {
-        'Content-Type': 'application/json',
-    },
-});
-
+// ─── Auth ────────────────────────────────────────────────────
 export const authService = {
-    login: async (credentials) => {
-        // Mocking API call
-        console.log('Logging in with:', credentials);
-        return { data: { token: 'mock-jwt-token', user: { name: 'Dhruv Gharat', id: '123' } } };
-    },
-    signup: async (userData) => {
-        console.log('Signing up with:', userData);
-        return { data: { success: true } };
-    },
+  login:         (credentials)  => api.post('/auth/login', credentials),
+  signup:        (userData)     => api.post('/auth/signup', userData),
+  getMe:         ()             => api.get('/auth/me'),
+  updateProfile: (data)         => api.patch('/auth/update-profile', data),
 };
 
+// ─── Dashboard ───────────────────────────────────────────────
+export const dashboardService = {
+  getData: () => api.get('/dashboard'),
+};
+
+// ─── Tests ───────────────────────────────────────────────────
 export const testService = {
-    submitMMSE: async (scoreData) => {
-        console.log('Submitting MMSE:', scoreData);
-        return { data: { success: true, riskLevel: 'Low' } };
-    },
-    submitMoCA: async (scoreData) => {
-        console.log('Submitting MoCA:', scoreData);
-        return { data: { success: true, riskLevel: 'Low' } };
-    },
-    submitSpeech: async (formData) => {
-        console.log('Submitting Speech Data');
-        return { data: { success: true, analysis: 'Normal' } };
-    },
-    uploadMRI: async (formData) => {
-        console.log('Uploading MRI Scans');
-        return { data: { success: true, reportId: 'REP-789' } };
-    }
+  submitMMSE:      (payload) => api.post('/tests/mmse', payload),
+  submitMoCA:      (payload) => api.post('/tests/moca', payload),
+  getHistory:      (params)  => api.get('/tests/history', { params }),
+  getLatestScores: ()        => api.get('/tests/latest-scores'),
 };
 
+// ─── Speech ──────────────────────────────────────────────────
+export const speechService = {
+  upload: (formData) =>
+    api.post('/speech/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  getHistory: () => api.get('/speech/history'),
+};
+
+// ─── MRI ─────────────────────────────────────────────────────
+export const mriService = {
+  upload: (formData) =>
+    api.post('/mri/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  getHistory: () => api.get('/mri/history'),
+};
+
+// ─── Reports ─────────────────────────────────────────────────
+export const reportService = {
+  getSummary:   ()         => api.get('/reports/summary'),
+  getAll:       (params)   => api.get('/reports', { params }),
+  getById:      (id)       => api.get(`/reports/${id}`),
+};
+
+// ─── Doctors ─────────────────────────────────────────────────
 export const doctorService = {
-    sendReport: async (reportData) => {
-        console.log('Sending report to doctor:', reportData);
-        return { data: { success: true } };
-    }
+  getAll:             (params) => api.get('/doctors', { params }),
+  book:               (data)   => api.post('/doctors/book', data),
+  getConsultations:   ()       => api.get('/doctors/consultations'),
+  cancelConsultation: (id)     => api.patch(`/doctors/consultations/${id}/cancel`),
 };
 
 export default api;

@@ -1,234 +1,210 @@
-import React, { useState, useRef } from 'react';
-import {
-  Upload,
-  File,
-  CheckCircle2,
-  X,
-  ChevronRight,
-  Info,
-  ShieldCheck,
-  Brain,
-  Layers,
-  Search,
-  Zap
-} from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Upload, File, X, CheckCircle2, AlertCircle, ArrowRight, Brain, Loader } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { mriService } from '../services/api';
 
 const MRIUpload = () => {
-  const [files, setFiles] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const fileInputRef = useRef();
+  const navigate = useNavigate();
+  const [files, setFiles]         = useState([]);
+  const [isDragging, setDragging] = useState(false);
+  const [phase, setPhase]         = useState('idle'); // idle | uploading | done | error
+  const [results, setResults]     = useState([]);
+  const [error, setError]         = useState('');
 
-  const handleFileChange = (e) => {
-    const selectedFiles = Array.from(e.target.files);
-    setFiles([...files, ...selectedFiles]);
+  const ALLOWED = ['.dcm', '.nii', '.nrrd', '.png', '.jpg', '.jpeg'];
+
+  const addFiles = useCallback((newFiles) => {
+    const valid = Array.from(newFiles).filter((f) => {
+      const ext = '.' + f.name.split('.').pop().toLowerCase();
+      return ALLOWED.includes(ext);
+    });
+    setFiles((prev) => {
+      const existing = new Set(prev.map((f) => f.name));
+      return [...prev, ...valid.filter((f) => !existing.has(f.name))].slice(0, 10);
+    });
+  }, []);
+
+  const removeFile = (name) => setFiles((f) => f.filter((x) => x.name !== name));
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    addFiles(e.dataTransfer.files);
   };
 
-  const simulateUpload = () => {
+  const handleSubmit = async () => {
     if (files.length === 0) return;
-    setUploading(true);
-    let p = 0;
-    const interval = setInterval(() => {
-      p += 5;
-      setProgress(p);
-      if (p >= 100) {
-        clearInterval(interval);
-        setTimeout(() => {
-          setUploading(false);
-          setProgress(0);
-        }, 1000);
-      }
-    }, 100);
+    setPhase('uploading');
+    setError('');
+
+    const formData = new FormData();
+    files.forEach((f) => formData.append('scans', f));
+
+    try {
+      const { data } = await mriService.upload(formData);
+      setResults(data.data);
+      setPhase('done');
+      setFiles([]);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Upload failed. Please check the file formats and try again.');
+      setPhase('error');
+    }
   };
+
+  const formatSize = (bytes) => bytes < 1024 * 1024
+    ? `${(bytes / 1024).toFixed(1)} KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+  const getRiskColor = (risk) => ({ Low: '#6FCF97', Moderate: '#F59E0B', High: '#EF4444' }[risk] || '#4A90E2');
 
   return (
     <div className="mri-upload-v2 container animate-fade-up">
-      <header className="page-header-v2">
-        <div className="header-icon-v2 bg-green-soft">
-          <Brain size={28} className="text-secondary" />
+      <div className="mri-header">
+        <div className="icon-header-sq" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+          <Upload size={28} />
         </div>
-        <div className="header-text-v2">
-          <h1>Neural Image Repository</h1>
-          <p>Upload DICOM, NIfTI, or High-Res MRI scans for hippocampal volumetric analysis.</p>
+        <div>
+          <h1>MRI Neuroimaging Analysis</h1>
+          <p>Upload DICOM, NIfTI, or NRRD brain scans. Our AI performs volumetric hippocampal assessment.</p>
         </div>
-      </header>
+      </div>
 
-      <div className="upload-layout-v2">
-        {/* Main Upload Zone */}
-        <div className="upload-main-v2">
+      {error && (
+        <div className="alert-block alert-danger mb-4">
+          <AlertCircle size={20} /><span>{error}</span>
+        </div>
+      )}
+
+      {phase !== 'done' && (
+        <>
+          {/* Drop Zone */}
           <div
-            className={`dropzone-v2 card-modern ${uploading ? 'uploading' : ''}`}
-            onClick={() => !uploading && fileInputRef.current.click()}
+            className={`drop-zone-v2 ${isDragging ? 'dragging' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => document.getElementById('mri-file-input').click()}
           >
             <input
-              type="file"
-              multiple
-              hidden
-              ref={fileInputRef}
-              onChange={handleFileChange}
+              id="mri-file-input" type="file" multiple accept=".dcm,.nii,.nrrd,.png,.jpg,.jpeg"
+              style={{ display: 'none' }}
+              onChange={(e) => addFiles(e.target.files)}
             />
-            <div className="dropzone-content">
-              <div className="icon-stack">
-                <div className="icon-circle main"><Upload size={40} /></div>
-                <div className="icon-circle sub"><Layers size={20} /></div>
-              </div>
-              <h2>{uploading ? 'Processing Scans...' : 'Drop MRI Scans Here'}</h2>
-              <p>Drag and drop multiple files or click to browse. HIPAA compliant encryption active.</p>
-              <div className="format-badges">
-                <span>DICOM</span>
-                <span>NIfTI</span>
-                <span>PNG</span>
-                <span>NRRD</span>
-              </div>
+            <div className="drop-icon-wrapper">
+              <Upload size={48} />
             </div>
-
-            {uploading && (
-              <div className="upload-overlay">
-                <div className="progress-radial-container">
-                  <svg viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="8" />
-                    <circle
-                      cx="50" cy="50" r="45" fill="none"
-                      stroke="white" strokeWidth="8"
-                      strokeDasharray={`${(progress / 100) * 283} 283`}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <span className="p-text">{progress}%</span>
-                </div>
-              </div>
-            )}
+            <h3>Drag & Drop Scan Files</h3>
+            <p>or click to browse — supports DICOM, NIfTI, NRRD, PNG, JPEG (max 10 files · 50MB each)</p>
+            <div className="format-tags">
+              {ALLOWED.map((f) => <span key={f} className="format-tag">{f.toUpperCase()}</span>)}
+            </div>
           </div>
 
+          {/* File Queue */}
           {files.length > 0 && (
-            <div className="file-list-v2 card-modern animate-fade-up">
-              <div className="list-header">
-                <h3>Uploaded Assets ({files.length})</h3>
-                {!uploading && <button className="btn-primary-sm" onClick={simulateUpload}>Run AI Analysis <Zap size={14} /></button>}
+            <div className="file-queue card-modern mt-4">
+              <div className="queue-header">
+                <h3><File size={20} /> {files.length} file{files.length > 1 ? 's' : ''} queued</h3>
+                <button className="text-link" onClick={() => setFiles([])}>Clear All</button>
               </div>
-              <div className="files-grid">
+              <div className="file-list">
                 {files.map((f, i) => (
-                  <div key={i} className="file-item-v2">
+                  <div key={i} className="file-row">
                     <div className="f-icon"><File size={20} /></div>
                     <div className="f-info">
                       <strong>{f.name}</strong>
-                      <span>{(f.size / 1024 / 1024).toFixed(2)} MB • Ready</span>
+                      <span>{formatSize(f.size)}</span>
                     </div>
-                    <button className="del-btn" onClick={() => setFiles(files.filter((_, idx) => idx !== i))}>
-                      <X size={16} />
+                    <button className="f-remove" onClick={() => removeFile(f.name)}>
+                      <X size={18} />
                     </button>
                   </div>
                 ))}
               </div>
+              {phase === 'uploading' ? (
+                <div className="upload-progress-msg">
+                  <Loader size={20} className="spin-icon" />
+                  <span>Uploading and analyzing scans...</span>
+                  <style jsx>{`.spin-icon{animation:spin 1.2s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                </div>
+              ) : (
+                <button className="btn-analyze" onClick={handleSubmit}>
+                  <Brain size={20} /> Run AI Analysis <ArrowRight size={20} />
+                </button>
+              )}
             </div>
           )}
+        </>
+      )}
+
+      {/* Results */}
+      {phase === 'done' && results.length > 0 && (
+        <div className="results-section mt-4">
+          <div className="card-modern results-header-card">
+            <CheckCircle2 size={40} className="text-secondary" />
+            <h2>Analysis Complete — {results.length} Scan{results.length > 1 ? 's' : ''} Processed</h2>
+            <p>Results have been saved to your clinical profile and a report has been generated.</p>
+          </div>
+          <div className="scan-result-grid">
+            {results.map((r, i) => (
+              <div key={i} className="scan-result-card" style={{ borderLeft: `4px solid ${getRiskColor(r.risk_level)}` }}>
+                <div className="s-file-name"><File size={16} /> {r.file_name}</div>
+                <div className="s-metrics">
+                  <div className="s-metric"><span>Risk Level</span><strong style={{ color: getRiskColor(r.risk_level) }}>{r.risk_level}</strong></div>
+                  <div className="s-metric"><span>Status</span><strong>{r.status}</strong></div>
+                  <div className="s-metric"><span>Hippocampal Vol.</span><strong>{r.hippocampal_vol.toFixed(0)} mm³</strong></div>
+                  <div className="s-metric"><span>Atrophy</span><strong>{r.atrophy_pct}%</strong></div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="result-actions">
+            <button className="btn-primary-lg" onClick={() => navigate('/reports')}>View Clinical Reports <ArrowRight size={20} /></button>
+            <button className="btn-outline" onClick={() => { setPhase('idle'); setResults([]); }}>Upload More Scans</button>
+          </div>
         </div>
-
-        {/* Sidebar Guidelines */}
-        <aside className="upload-sidebar-v2">
-          <div className="card-modern guide-card">
-            <h3><Info size={18} className="text-primary" /> Scan Requirements</h3>
-            <ul className="guide-list">
-              <li>T1-weighted structural imaging preferred</li>
-              <li>Slice thickness &lt; 1.5mm for better accuracy</li>
-              <li>Remove personal metadata via de-identification</li>
-              <li>Wait for "Verified" status before clinical review</li>
-            </ul>
-          </div>
-
-          <div className="security-card-v2">
-            <ShieldCheck size={32} className="text-secondary" />
-            <div>
-              <h4>Clinical-Grade Privacy</h4>
-              <p>All neural imaging is processed on isolated secure servers. Zero data sharing model.</p>
-            </div>
-          </div>
-
-          <div className="recent-scans-v2 card-modern">
-            <div className="header-s">
-              <h3>Recent Analyses</h3>
-              <button className="icon-btn"><Search size={16} /></button>
-            </div>
-            <div className="mini-record-list">
-              <div className="m-record">
-                <CheckCircle2 size={16} className="text-secondary" />
-                <div>
-                  <strong>Brain_Scan_T1.dcm</strong>
-                  <span>Processed • 2 days ago</span>
-                </div>
-              </div>
-              <div className="m-record">
-                <CheckCircle2 size={16} className="text-secondary" />
-                <div>
-                  <strong>Patient_MRI_Axial.png</strong>
-                  <span>Verified • Mar 01, 2026</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </aside>
-      </div>
+      )}
 
       <style jsx>{`
-        .mri-upload-v2 { padding: 40px 0; }
-        .page-header-v2 { display: flex; align-items: center; gap: 24px; margin-bottom: 40px; }
-        .header-icon-v2 { width: 64px; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center; }
-        .bg-green-soft { background: var(--surface-green); }
-        .header-text-v2 h1 { font-size: 2.2rem; line-height: 1; margin-bottom: 8px; }
-        .header-text-v2 p { color: var(--text-sub); font-size: 1.1rem; }
-
-        .upload-layout-v2 { display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
-        
-        .dropzone-v2 { 
-          height: 380px; border: 3px dashed var(--surface-alt); background: white; 
-          display: flex; align-items: center; justify-content: center; text-align: center;
-          cursor: pointer; position: relative; overflow: hidden;
-        }
-        .dropzone-v2:hover { border-color: var(--primary); background: #f8fbff; }
-        .dropzone-v2.uploading { cursor: wait; pointer-events: none; }
-        
-        .icon-stack { position: relative; margin-bottom: 24px; height: 80px; width: 80px; margin: 0 auto 24px; }
-        .icon-circle { border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-        .icon-circle.main { width: 80px; height: 80px; background: var(--grad-primary); color: white; }
-        .icon-circle.sub { position: absolute; bottom: -5px; right: -5px; width: 36px; height: 36px; background: var(--accent); color: white; border: 3px solid white; }
-        
-        .dropzone-content h2 { margin-bottom: 12px; }
-        .dropzone-content p { color: var(--text-sub); max-width: 400px; margin: 0 auto 20px; font-size: 0.95rem; }
-        
-        .format-badges { display: flex; gap: 10px; justify-content: center; }
-        .format-badges span { padding: 4px 12px; background: var(--background); border-radius: 6px; font-size: 0.75rem; font-weight: 800; color: var(--text-muted); border: 1px solid var(--surface-alt); }
-
-        .upload-overlay { position: absolute; inset: 0; background: rgba(74, 144, 226, 0.9); display: flex; align-items: center; justify-content: center; color: white; backdrop-filter: blur(4px); }
-        .progress-radial-container { position: relative; width: 120px; height: 120px; transform: rotate(-90deg); }
-        .p-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; transform: rotate(90deg); font-weight: 800; font-size: 1.25rem; }
-
-        .file-list-v2 { margin-top: 24px; }
-        .list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-        .files-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-        .file-item-v2 { display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--background); border-radius: 12px; border: 1px solid var(--surface-alt); position: relative; }
-        .f-icon { width: 40px; height: 40px; background: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--primary); }
-        .f-info strong { font-size: 0.9rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
-        .f-info span { font-size: 0.75rem; color: var(--text-sub); }
-        .del-btn { position: absolute; top: 12px; right: 12px; border: none; background: none; color: var(--text-muted); cursor: pointer; }
-        .del-btn:hover { color: var(--danger); }
-
-        .upload-sidebar-v2 { display: flex; flex-direction: column; gap: 24px; }
-        .guide-card h3 { display: flex; align-items: center; gap: 8px; font-size: 1.1rem; margin-bottom: 16px; }
-        .guide-list { padding-left: 20px; display: grid; gap: 12px; font-size: 0.9rem; color: var(--text-sub); }
-        
-        .security-card-v2 { background: var(--surface-green); padding: 24px; border-radius: var(--radius-lg); display: flex; gap: 16px; border: 1px solid #dcfce7; }
-        .security-card-v2 h4 { font-size: 1rem; margin-bottom: 4px; color: var(--secondary); }
-        .security-card-v2 p { font-size: 0.85rem; color: #166534; opacity: 0.8; }
-
-        .m-record { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--surface-alt); }
-        .m-record:last-child { border-bottom: none; }
-        .m-record strong { font-size: 0.85rem; display: block; }
-        .m-record span { font-size: 0.75rem; color: var(--text-muted); }
-
-        @media (max-width: 992px) {
-          .upload-layout-v2 { grid-template-columns: 1fr; }
-          .files-grid { grid-template-columns: 1fr; }
-        }
+        .mri-upload-v2 { padding: 40px 0; max-width: 800px; }
+        .mri-header { display: flex; align-items: center; gap: 20px; margin-bottom: 32px; }
+        .icon-header-sq { width: 60px; height: 60px; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
+        .mri-header h1 { font-size: 2rem; margin-bottom: 6px; }
+        .mri-header p { color: var(--text-sub); }
+        .alert-block { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 12px; font-size: 0.9rem; font-weight: 600; }
+        .alert-danger { background: #fff1f2; color: #9f1239; border: 1px solid #fecdd3; }
+        .drop-zone-v2 { border: 2px dashed var(--surface-alt); border-radius: 20px; padding: 60px 40px; text-align: center; cursor: pointer; transition: var(--transition); background: white; }
+        .drop-zone-v2:hover, .drop-zone-v2.dragging { border-color: var(--secondary); background: #f0fdf4; }
+        .drop-icon-wrapper { width: 80px; height: 80px; background: #f0fdf4; border-radius: 20px; display: flex; align-items: center; justify-content: center; color: var(--secondary); margin: 0 auto 20px; }
+        .drop-zone-v2 h3 { font-size: 1.5rem; margin-bottom: 10px; }
+        .drop-zone-v2 p { color: var(--text-sub); max-width: 480px; margin: 0 auto 20px; }
+        .format-tags { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+        .format-tag { background: #f0fdf4; color: var(--secondary); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; }
+        .file-queue { padding: 24px; }
+        .queue-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .text-link { background: none; border: none; color: var(--primary); font-weight: 700; cursor: pointer; }
+        .file-row { display: flex; align-items: center; gap: 16px; padding: 14px; border: 1px solid var(--surface-alt); border-radius: 12px; margin-bottom: 8px; }
+        .f-icon { width: 40px; height: 40px; background: #f0fdf4; color: var(--secondary); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+        .f-info { flex: 1; }
+        .f-info strong { font-size: 0.9rem; display: block; }
+        .f-info span { font-size: 0.8rem; color: var(--text-muted); }
+        .f-remove { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px; border-radius: 6px; }
+        .f-remove:hover { background: #fff1f2; color: #ef4444; }
+        .upload-progress-msg { display: flex; align-items: center; gap: 12px; color: var(--primary); font-weight: 600; padding: 16px 0; justify-content: center; }
+        .btn-analyze { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 16px; background: linear-gradient(135deg, #10B981, #059669); color: white; border: none; border-radius: 14px; font-size: 1.1rem; font-weight: 700; cursor: pointer; margin-top: 16px; }
+        .results-section { display: flex; flex-direction: column; gap: 24px; }
+        .results-header-card { text-align: center; padding: 40px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+        .results-header-card h2 { font-size: 1.8rem; }
+        .scan-result-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+        .scan-result-card { background: white; padding: 24px; border-radius: 16px; box-shadow: var(--shadow-sm); }
+        .s-file-name { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--surface-alt); }
+        .s-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .s-metric { text-align: center; }
+        .s-metric span { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; display: block; text-transform: uppercase; }
+        .s-metric strong { font-size: 1.1rem; }
+        .result-actions { display: flex; gap: 16px; }
+        .btn-primary-lg { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 28px; background: var(--primary); color: white; border: none; border-radius: 12px; font-size: 1rem; font-weight: 700; cursor: pointer; }
+        .btn-outline { padding: 14px 28px; background: white; color: var(--text-main); border: 1px solid var(--surface-alt); border-radius: 12px; font-weight: 700; cursor: pointer; }
       `}</style>
     </div>
   );

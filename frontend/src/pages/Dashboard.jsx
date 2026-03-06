@@ -1,53 +1,72 @@
-import React from 'react';
-import {
-  TrendingUp,
-  Clock,
-  Brain,
-  Mic,
-  Upload,
-  FileText,
-  ArrowRight,
-  Activity,
-  Calendar,
-  AlertCircle,
-  ChevronRight,
-  CheckCircle2
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { TrendingUp, Clock, Brain, Mic, Upload, FileText, ArrowRight, Activity, AlertCircle, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { dashboardService } from '../services/api';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+
+  useEffect(() => {
+    dashboardService.getData()
+      .then((res) => setData(res.data.data))
+      .catch(() => setError('Failed to load dashboard data.'))
+      .finally(() => setLoading(false));
+  }, []);
+
   const assessmentCards = [
-    { title: 'Clinical MMSE', desc: 'Global screening tool for orientation.', icon: <Brain size={24} />, color: 'blue', path: '/tests/mmse' },
-    { title: 'Clinical MoCA', desc: 'Detailed screening for impairment.', icon: <Activity size={24} />, color: 'purple', path: '/tests/moca' },
-    { title: 'Speech Test', desc: 'Analyzing vocal biomarkers.', icon: <Mic size={24} />, color: 'orange', path: '/speech-test' },
-    { title: 'MRI Analysis', desc: 'Structural brain health scan.', icon: <Upload size={24} />, color: 'green', path: '/mri-upload' }
+    { title: 'Clinical MMSE', desc: 'Global screening tool for orientation.', icon: <Brain size={24} />, color: 'blue',   path: '/tests/mmse' },
+    { title: 'Clinical MoCA', desc: 'Detailed screening for impairment.',    icon: <Activity size={24} />, color: 'purple', path: '/tests/moca' },
+    { title: 'Speech Test',   desc: 'Analyzing vocal biomarkers.',           icon: <Mic size={24} />,    color: 'orange', path: '/speech-test' },
+    { title: 'MRI Analysis',  desc: 'Structural brain health scan.',         icon: <Upload size={24} />, color: 'green',  path: '/mri-upload' },
   ];
 
-  const recentActivity = [
-    { id: 1, type: 'MMSE Assessment', date: 'Today, 10:30 AM', score: '28/30', status: 'Optimal' },
-    { id: 2, type: 'Speech Analysis', date: 'Mar 04, 2026', score: '94%', status: 'Stable' },
-    { id: 3, type: 'MoCA Assessment', date: 'Feb 28, 2026', score: '26/30', status: 'Good' },
-  ];
+  const firstName = user?.full_name?.split(' ')[0] || 'Patient';
+
+  if (loading) return (
+    <div className="dash-loading">
+      <div className="spin-ring" />
+      <span>Loading your health dashboard...</span>
+      <style jsx>{`.dash-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:var(--primary);font-weight:600}.spin-ring{width:40px;height:40px;border:3px solid #e2e8f0;border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  const recentActivity = data?.recent_activity || [];
+  const mmse  = data?.latest_scores?.MMSE;
+  const moca  = data?.latest_scores?.MoCA;
+  const trendData = data?.trend_data || [];
 
   return (
     <div className="dashboard-v2 animate-fade-up">
       <div className="container dashboard-grid">
         {/* Main Content Area */}
         <div className="main-panel">
-
           {/* Welcome Card */}
           <section className="welcome-banner">
             <div className="welcome-text">
-              <span className="date-tag">Friday, March 06, 2026</span>
-              <h1>Welcome back, <span className="text-primary">Dhruv</span></h1>
-              <p>Your cognitive profile is stable. We've updated your analysis based on your recent MMSE.</p>
+              <span className="date-tag">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+              <h1>Welcome back, <span className="text-primary">{firstName}</span></h1>
+              <p>
+                {data?.overall_risk
+                  ? `Your overall cognitive risk is ${data.overall_risk}. Keep up with your assessments.`
+                  : 'Take your first assessment to start tracking your cognitive health.'}
+              </p>
               <div className="welcome-stats">
                 <div className="mini-stat">
                   <TrendingUp size={16} className="text-secondary" />
-                  <span><strong>+2%</strong> Stability</span>
+                  <span><strong>{data?.tests_completed || 0}</strong> Tests Completed</span>
                 </div>
                 <div className="mini-stat">
                   <Clock size={16} className="text-primary" />
-                  <span>Next test in 4 days</span>
+                  <span>
+                    {data?.upcoming_consultation
+                      ? `Consult: ${new Date(data.upcoming_consultation.scheduled_at).toLocaleDateString()}`
+                      : 'No upcoming consultations'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -61,14 +80,12 @@ const Dashboard = () => {
           <section className="assessments-section">
             <div className="section-header-compact">
               <h2>Diagnostic Suite</h2>
-              <button className="btn-link">All Assessments <ChevronRight size={16} /></button>
+              <button className="btn-link" onClick={() => navigate('/tests')}>All Assessments <ChevronRight size={16} /></button>
             </div>
             <div className="assessment-grid-modern">
               {assessmentCards.map((card, i) => (
-                <div key={i} className="card-modern assessment-card" onClick={() => window.location.href = card.path}>
-                  <div className={`icon-square bg-${card.color}`}>
-                    {card.icon}
-                  </div>
+                <div key={i} className="card-modern assessment-card" onClick={() => navigate(card.path)}>
+                  <div className={`icon-square bg-${card.color}`}>{card.icon}</div>
                   <div className="card-info">
                     <h3>{card.title}</h3>
                     <p>{card.desc}</p>
@@ -79,7 +96,7 @@ const Dashboard = () => {
             </div>
           </section>
 
-          {/* Health Trends */}
+          {/* Trend Bars */}
           <section className="trends-section">
             <div className="card-modern trends-card">
               <div className="card-header-with-icon">
@@ -87,12 +104,11 @@ const Dashboard = () => {
                 <h3>Cognitive Stability Trend</h3>
               </div>
               <div className="mock-graph">
-                {/* Visual representation of a graph */}
                 <div className="graph-bars">
-                  {[40, 60, 55, 75, 80, 78, 85].map((h, i) => (
+                  {(trendData.length > 0 ? trendData : [40,60,55,75,80,78,85].map((v,i) => ({ percent: v, label: `M${i+1}` }))).map((d, i) => (
                     <div key={i} className="bar-col">
-                      <div className="bar-fill" style={{ height: `${h}%`, animationDelay: `${i * 0.1}s` }}></div>
-                      <span className="bar-label">M{i + 1}</span>
+                      <div className="bar-fill" style={{ height: `${d.percent || d}%`, animationDelay: `${i * 0.1}s` }}></div>
+                      <span className="bar-label">{d.label || `M${i+1}`}</span>
                     </div>
                   ))}
                 </div>
@@ -103,21 +119,21 @@ const Dashboard = () => {
 
         {/* Sidebar Panel */}
         <aside className="side-panel">
-          {/* Risk Level Card */}
+          {/* Risk Level */}
           <div className="card-modern risk-summary-card">
             <h3>Risk Assessment</h3>
             <div className="risk-gauge">
               <div className="gauge-fill"></div>
               <div className="gauge-label">
-                <span className="risk-title">Low Risk</span>
-                <span className="risk-percent">12%</span>
+                <span className="risk-title">{data?.overall_risk ? `${data.overall_risk} Risk` : 'No Data Yet'}</span>
+                <span className="risk-percent">{data?.overall_risk_percent ?? '--'}%</span>
               </div>
             </div>
-            <div className="alert-badge success">
+            <div className={`alert-badge ${!data?.overall_risk || data.overall_risk === 'Low' ? 'success' : 'warning'}`}>
               <CheckCircle2 size={16} />
-              <span>Optimal cognitive baseline</span>
+              <span>{data?.overall_risk === 'High' ? 'Elevated cognitive risk detected' : 'Optimal cognitive baseline'}</span>
             </div>
-            <p className="description-text">Your neural response latency is within the 90th percentile for your age group.</p>
+            {mmse && <p className="description-text">Latest MMSE: <strong>{mmse.score}/{mmse.max_score}</strong> · MoCA: <strong>{moca?.score ?? '--'}/{moca?.max_score ?? 30}</strong></p>}
           </div>
 
           {/* Recent Activity */}
@@ -127,11 +143,13 @@ const Dashboard = () => {
               <FileText size={18} className="text-muted" />
             </div>
             <div className="activity-list">
-              {recentActivity.map((act) => (
-                <div key={act.id} className="activity-item">
+              {recentActivity.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '20px 0' }}>No assessments yet. Take your first test!</p>
+              ) : recentActivity.map((act, i) => (
+                <div key={i} className="activity-item">
                   <div className="act-info">
                     <strong>{act.type}</strong>
-                    <span>{act.date}</span>
+                    <span>{new Date(act.date).toLocaleDateString()}</span>
                   </div>
                   <div className="act-score">
                     <span className="score-v">{act.score}</span>
@@ -140,10 +158,10 @@ const Dashboard = () => {
                 </div>
               ))}
             </div>
-            <button className="btn-full-outline mt-4">View All Reports</button>
+            <button className="btn-full-outline mt-4" onClick={() => navigate('/reports')}>View All Reports</button>
           </div>
 
-          {/* Recommendation */}
+          {/* Tip */}
           <div className="recommendation-card">
             <AlertCircle size={24} className="text-white" />
             <div className="rec-text">
@@ -156,77 +174,30 @@ const Dashboard = () => {
 
       <style jsx>{`
         .dashboard-v2 { padding: 40px 0; }
-        .dashboard-grid {
-          display: grid;
-          grid-template-columns: 2fr 1fr;
-          gap: 32px;
-        }
-
-        /* Welcome Banner */
-        .welcome-banner {
-          background: linear-gradient(135deg, #E8F2FF 0%, #FFFFFF 100%);
-          border: 1px solid var(--surface-alt);
-          border-radius: var(--radius-lg);
-          padding: 40px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 40px;
-          position: relative;
-          overflow: hidden;
-        }
+        .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
+        .welcome-banner { background: linear-gradient(135deg, #E8F2FF 0%, #FFFFFF 100%); border: 1px solid var(--surface-alt); border-radius: var(--radius-lg); padding: 40px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; position: relative; overflow: hidden; }
         .date-tag { color: var(--primary); font-weight: 700; font-size: 0.85rem; text-transform: uppercase; margin-bottom: 12px; display: block; }
         .welcome-text h1 { font-size: 2.5rem; margin-bottom: 12px; }
         .welcome-text p { color: var(--text-sub); max-width: 480px; margin-bottom: 24px; }
         .welcome-stats { display: flex; gap: 24px; }
         .mini-stat { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text-main); }
-        .pulse-aura {
-          position: absolute; right: -50px; width: 300px; height: 300px;
-          background: var(--primary); filter: blur(100px); opacity: 0.1;
-        }
-
-        /* Assessment Card Grid */
+        .pulse-aura { position: absolute; right: -50px; width: 300px; height: 300px; background: var(--primary); filter: blur(100px); opacity: 0.1; }
         .section-header-compact { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-        .btn-link { background: none; border: none; color: var(--primary); font-weight: 700; display: flex; align-items: center; gap: 4px; }
-        
-        .assessment-grid-modern {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 20px;
-          margin-bottom: 40px;
-        }
-        .assessment-card {
-          display: flex;
-          align-items: center;
-          gap: 20px;
-          cursor: pointer;
-          position: relative;
-        }
-        .icon-square {
-          width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0;
-        }
-        .bg-blue { background: var(--grad-primary); }
-        .bg-purple { background: var(--grad-accent); }
-        .bg-orange { background: linear-gradient(135deg, #F59E0B, #EF4444); }
-        .bg-green { background: linear-gradient(135deg, #10B981, #059669); }
-        
+        .btn-link { background: none; border: none; color: var(--primary); font-weight: 700; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        .assessment-grid-modern { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 40px; }
+        .assessment-card { display: flex; align-items: center; gap: 20px; cursor: pointer; position: relative; }
+        .icon-square { width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
+        .bg-blue { background: var(--grad-primary); } .bg-purple { background: var(--grad-accent); } .bg-orange { background: linear-gradient(135deg, #F59E0B, #EF4444); } .bg-green { background: linear-gradient(135deg, #10B981, #059669); }
         .card-info h3 { font-size: 1.1rem; margin-bottom: 4px; }
         .card-info p { font-size: 0.85rem; color: var(--text-sub); }
-        .icon-btn-round { 
-          position: absolute; right: 20px; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--surface-alt); background: white; 
-          color: var(--primary); display: flex; align-items: center; justify-content: center; opacity: 0; transform: translateX(10px); transition: var(--transition);
-        }
+        .icon-btn-round { position: absolute; right: 20px; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--surface-alt); background: white; color: var(--primary); display: flex; align-items: center; justify-content: center; opacity: 0; transform: translateX(10px); transition: var(--transition); }
         .assessment-card:hover .icon-btn-round { opacity: 1; transform: translateX(0); }
-
-        /* Trends Card */
         .mock-graph { height: 180px; margin-top: 30px; display: flex; align-items: flex-end; }
         .graph-bars { width: 100%; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 10px; }
         .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px; }
         .bar-fill { width: 60%; background: var(--grad-primary); border-radius: 8px 8px 0 0; animation: growBar 1s ease-out forwards; }
         .bar-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
         @keyframes growBar { from { height: 0; } }
-
-        /* Side Panel */
         .side-panel { display: flex; flex-direction: column; gap: 24px; }
         .risk-summary-card { text-align: center; }
         .risk-gauge { height: 120px; margin: 24px 0; position: relative; display: flex; align-items: center; justify-content: center; }
@@ -234,11 +205,11 @@ const Dashboard = () => {
         .gauge-label { position: absolute; display: flex; flex-direction: column; }
         .risk-title { font-size: 0.85rem; color: var(--text-sub); font-weight: 600; }
         .risk-percent { font-size: 2rem; font-weight: 800; color: var(--secondary); }
-        
         .alert-badge { display: flex; align-items: center; gap: 8px; padding: 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; justify-content: center; }
         .alert-badge.success { background: var(--surface-green); color: var(--secondary); }
-        .description-text { font-size: 0.85rem; color: var(--text-sub); margin-top: 16px; text-align: left; }
-
+        .alert-badge.warning { background: #fff7ed; color: #d97706; }
+        .description-text { font-size: 0.85rem; color: var(--text-sub); margin-top: 16px; }
+        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .activity-item { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--surface-alt); }
         .activity-item:last-child { border-bottom: none; }
         .act-info { display: flex; flex-direction: column; }
@@ -247,19 +218,11 @@ const Dashboard = () => {
         .act-score { text-align: right; display: flex; flex-direction: column; }
         .score-v { font-weight: 700; color: var(--primary); }
         .status-v { font-size: 0.75rem; color: var(--secondary); font-weight: 700; text-transform: uppercase; }
-
         .recommendation-card { background: var(--grad-accent); padding: 24px; border-radius: var(--radius-lg); color: white; display: flex; gap: 16px; }
         .rec-text h4 { margin-bottom: 4px; }
         .rec-text p { font-size: 0.9rem; opacity: 0.9; }
-
-        .btn-full-outline { width: 100%; padding: 12px; border: 1px solid var(--surface-alt); background: white; border-radius: 12px; font-weight: 700; color: var(--text-main); }
-
-        @media (max-width: 992px) {
-          .dashboard-grid { grid-template-columns: 1fr; }
-          .welcome-banner { flex-direction: column; text-align: center; }
-          .welcome-illustration { display: none; }
-          .assessment-grid-modern { grid-template-columns: 1fr; }
-        }
+        .btn-full-outline { width: 100%; padding: 12px; border: 1px solid var(--surface-alt); background: white; border-radius: 12px; font-weight: 700; color: var(--text-main); cursor: pointer; }
+        @media (max-width: 992px) { .dashboard-grid { grid-template-columns: 1fr; } .welcome-banner { flex-direction: column; text-align: center; } .welcome-illustration { display: none; } .assessment-grid-modern { grid-template-columns: 1fr; } }
       `}</style>
     </div>
   );
