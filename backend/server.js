@@ -1,19 +1,20 @@
-require('dotenv').config();
+require("dotenv").config();
 
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
+const express = require("express");
+const path = require("path");
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
+const rateLimit = require("express-rate-limit");
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
-const authRoutes      = require('./routes/authRoutes');
-const testRoutes      = require('./routes/testRoutes');
-const speechRoutes    = require('./routes/speechRoutes');
-const mriRoutes       = require('./routes/mriRoutes');
-const reportRoutes    = require('./routes/reportRoutes');
-const doctorRoutes    = require('./routes/doctorRoutes');
-const dashboardRoutes = require('./routes/dashboardRoutes');
+const authRoutes = require("./routes/authRoutes");
+const testRoutes = require("./routes/testRoutes");
+const speechRoutes = require("./routes/speechRoutes");
+const mriRoutes = require("./routes/mriRoutes");
+const reportRoutes = require("./routes/reportRoutes");
+const doctorRoutes = require("./routes/doctorRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 
 const app = express();
 
@@ -22,8 +23,8 @@ app.use(helmet());
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
-  process.env.CLIENT_URL || 'http://localhost:5173',
-  'http://localhost:3000',
+  process.env.CLIENT_URL || "http://localhost:5173",
+  "http://localhost:3000",
 ];
 
 app.use(
@@ -37,18 +38,21 @@ app.use(
       }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
 );
 
 // ─── Body Parser ──────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// ─── Static Files for Uploads ─────────────────────────────────────────────────
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ─── HTTP Request Logger ──────────────────────────────────────────────────────
-if (process.env.NODE_ENV !== 'test') {
-  app.use(morgan('dev'));
+if (process.env.NODE_ENV !== "test") {
+  app.use(morgan("dev"));
 }
 
 // ─── Global Rate Limiter ──────────────────────────────────────────────────────
@@ -59,10 +63,11 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
   message: {
     success: false,
-    message: 'Too many requests from this IP. Please try again after 15 minutes.',
+    message:
+      "Too many requests from this IP. Please try again after 15 minutes.",
   },
 });
-app.use('/api', globalLimiter);
+app.use("/api", globalLimiter);
 
 // ─── Auth-Specific Rate Limiter (stricter) ────────────────────────────────────
 const authLimiter = rateLimit({
@@ -70,30 +75,31 @@ const authLimiter = rateLimit({
   max: 20,
   message: {
     success: false,
-    message: 'Too many login/signup attempts. Please try again after 15 minutes.',
+    message:
+      "Too many login/signup attempts. Please try again after 15 minutes.",
   },
 });
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/signup', authLimiter);
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/signup", authLimiter);
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => {
+app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
-    message: '✅ CogniFusion API is running.',
+    message: "✅ CogniFusion API is running.",
     environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
   });
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
-app.use('/api/auth',      authRoutes);
-app.use('/api/tests',     testRoutes);
-app.use('/api/speech',    speechRoutes);
-app.use('/api/mri',       mriRoutes);
-app.use('/api/reports',   reportRoutes);
-app.use('/api/doctors',   doctorRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/tests", testRoutes);
+app.use("/api/speech", speechRoutes);
+app.use("/api/mri", mriRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/doctors", doctorRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {
@@ -105,17 +111,17 @@ app.use((req, res) => {
 
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
-  console.error('[Global Error]', err);
+  console.error("[Global Error]", err);
 
   // CORS error
-  if (err.message && err.message.startsWith('CORS policy')) {
+  if (err.message && err.message.startsWith("CORS policy")) {
     return res.status(403).json({ success: false, message: err.message });
   }
 
   res.status(err.status || 500).json({
     success: false,
-    message: err.message || 'Something went wrong. Please try again.',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    message: err.message || "Something went wrong. Please try again.",
+    ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
   });
 });
 
