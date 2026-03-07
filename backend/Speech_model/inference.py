@@ -14,12 +14,46 @@ import sys
 import os
 import json
 import warnings
+import subprocess
+import tempfile
 
 import numpy as np
 import librosa
 import joblib
 
 warnings.filterwarnings("ignore")
+
+
+def convert_to_wav(audio_path: str) -> tuple[str, bool]:
+    """
+    If audio_path is not a PCM wav, use ffmpeg to convert it.
+    Returns (path_to_use, was_converted). Caller must delete the temp file if was_converted=True.
+    """
+    ext = os.path.splitext(audio_path)[1].lower()
+    if ext in (".wav",):
+        return audio_path, False
+
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".wav")
+    os.close(tmp_fd)
+
+    # Prefer ffmpeg path injected by Node (ffmpeg-static), fall back to system ffmpeg
+    ffmpeg_bin = os.environ.get("FFMPEG_PATH", "ffmpeg")
+
+    try:
+        subprocess.run(
+            [ffmpeg_bin, "-y", "-i", audio_path,
+             "-ar", "16000", "-ac", "1", "-sample_fmt", "s16", tmp_path],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return tmp_path, True
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        os.unlink(tmp_path)
+        raise RuntimeError(
+            f"ffmpeg conversion failed for {audio_path}. "
+            "Please install ffmpeg (https://ffmpeg.org/download.html) and ensure it is on PATH."
+        ) from e
 
 # Wav2Vec2 loaded once at module level to avoid reloading per call
 _processor    = None
@@ -40,7 +74,12 @@ def extract_features(audio_path):
     import torch
     _load_wav2vec()
 
-    audio, sr = librosa.load(audio_path, sr=16000)
+    wav_path, converted = convert_to_wav(audio_path)
+    try:
+        audio, sr = librosa.load(wav_path, sr=16000)
+    finally:
+        if converted and os.path.exists(wav_path):
+            os.unlink(wav_path)
 
     # 1. Wav2Vec2 embeddings  (768)
     inputs = _processor(audio, sampling_rate=16000, return_tensors="pt", padding=True)

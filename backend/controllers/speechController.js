@@ -1,9 +1,32 @@
 const supabase = require("../config/supabase");
 const path = require("path");
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const fs = require("fs");
 const util = require("util");
 const execPromise = util.promisify(exec);
+const execFilePromise = util.promisify(execFile);
+const ffmpegPath = require("ffmpeg-static");
+
+/**
+ * Convert any audio file to a 16kHz mono WAV using the bundled ffmpeg.
+ * Returns the path of the new WAV file (caller must delete it).
+ */
+async function toWav(inputPath) {
+  const wavPath = inputPath.replace(/\.[^.]+$/, "_converted.wav");
+  await execFilePromise(ffmpegPath, [
+    "-y",
+    "-i",
+    inputPath,
+    "-ar",
+    "16000",
+    "-ac",
+    "1",
+    "-sample_fmt",
+    "s16",
+    wavPath,
+  ]);
+  return wavPath;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @route   POST /api/speech/upload
@@ -37,15 +60,31 @@ exports.uploadSpeech = async (req, res) => {
     // Save file locally permanently
     fs.writeFileSync(filePath, req.file.buffer);
 
+    // Convert to WAV if needed (browser records as webm)
+    let inferenceAudioPath = filePath;
+    let tempWavPath = null;
+    const ext = path.extname(originalName).toLowerCase();
+    if (ext !== ".wav") {
+      try {
+        tempWavPath = await toWav(filePath);
+        inferenceAudioPath = tempWavPath;
+      } catch (convErr) {
+        console.error("[Audio Conversion Error]", convErr.message);
+        // fall through — Python will also try conversion via ffmpeg
+      }
+    }
+
     // Run ML Model Inference
     const modelDir = path.join(__dirname, "../Speech_model");
     const pythonPath =
-      process.env.PYTHON_PATH || "python3";
+      process.env.PYTHON_PATH ||
+      (process.platform === "win32" ? "python" : "python3");
 
     let mlResult;
     try {
       const { stdout } = await execPromise(
-        `"${pythonPath}" "${path.join(modelDir, "inference.py")}" "${filePath}" "${modelDir}"`,
+        `"${pythonPath}" "${path.join(modelDir, "inference.py")}" "${inferenceAudioPath}" "${modelDir}"`,
+        { env: { ...process.env, FFMPEG_PATH: ffmpegPath } },
       );
       mlResult = JSON.parse(stdout);
     } catch (mlErr) {
@@ -55,6 +94,11 @@ exports.uploadSpeech = async (req, res) => {
         risk_level: "Moderate",
         analysis_notes: "ML model inference failed. Using baseline assessment.",
       };
+    } finally {
+      // Clean up temp WAV
+      if (tempWavPath && fs.existsSync(tempWavPath)) {
+        fs.unlinkSync(tempWavPath);
+      }
     }
 
     // Since we are storing locally, audio_url will be the relative path or local path
