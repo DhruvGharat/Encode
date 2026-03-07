@@ -30,6 +30,7 @@ const sendToken = (user, statusCode, res) => {
       date_of_birth: user.date_of_birth,
       gender: user.gender,
       educational_qualification: user.educational_qualification,
+      role: user.role || 'patient',
     },
   });
 };
@@ -41,7 +42,19 @@ const sendToken = (user, statusCode, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.signup = async (req, res) => {
   try {
-    const { full_name, email, password, date_of_birth, gender, educational_qualification } = req.body;
+    const { full_name, email, password, date_of_birth, gender, educational_qualification, role, doctor_secret_code } = req.body;
+
+    // --- Validate doctor registration ---
+    const assignedRole = role === 'doctor' ? 'doctor' : 'patient';
+    if (assignedRole === 'doctor') {
+      const expectedCode = process.env.DOCTOR_SECRET_CODE || 'COGNI-DOCTOR-2026';
+      if (doctor_secret_code !== expectedCode) {
+        return res.status(403).json({
+          success: false,
+          message: 'Invalid doctor registration code.',
+        });
+      }
+    }
 
     // --- Validation ---
     if (!full_name || !email || !password) {
@@ -90,8 +103,9 @@ exports.signup = async (req, res) => {
         date_of_birth: date_of_birth || null,
         gender: gender || null,
         educational_qualification: educational_qualification || null,
+        role: assignedRole,
       })
-      .select('id, full_name, email, patient_id, date_of_birth, gender, educational_qualification')
+      .select('id, full_name, email, patient_id, date_of_birth, gender, educational_qualification, role')
       .single();
 
     if (error) {
@@ -128,7 +142,7 @@ exports.login = async (req, res) => {
     // --- Fetch user including password_hash ---
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, full_name, email, password_hash, patient_id, date_of_birth, gender, educational_qualification')
+      .select('id, full_name, email, password_hash, patient_id, date_of_birth, gender, educational_qualification, role')
       .eq('email', email.toLowerCase().trim())
       .single();
 
@@ -193,7 +207,7 @@ exports.updateProfile = async (req, res) => {
       .from('users')
       .update(updates)
       .eq('id', req.user.id)
-      .select('id, full_name, email, patient_id, date_of_birth, gender, educational_qualification')
+      .select('id, full_name, email, patient_id, date_of_birth, gender, educational_qualification, role')
       .single();
 
     if (error) {

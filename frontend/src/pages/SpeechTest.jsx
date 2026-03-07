@@ -253,10 +253,23 @@ const SpeechTest = () => {
               <Mic size={48} />
             </div>
             <h2>Ready to Record</h2>
-            <p>
-              Click the button below to start your 30–60 second vocal
-              assessment.
-            </p>
+
+            {/* Fixed test prompt — standard "Cookie Theft" description task */}
+            <div className="test-prompt-card">
+              <div className="prompt-label">📋 Speech Sample Task</div>
+              <p className="prompt-sentence">
+                "Please describe in as much detail as possible everything you see happening in the picture below.
+                Tell me about all the people, objects, and actions you notice."
+              </p>
+              <div className="prompt-picture">
+                <div className="cookie-scene">
+                  <div className="scene-icon">🍪</div>
+                  <p className="scene-hint">Imagine a kitchen scene: a child stealing cookies, a woman washing dishes with water overflowing, and another child watching. Describe what you think is happening.</p>
+                </div>
+              </div>
+              <p className="prompt-instruction">Read and respond naturally for <strong>30–60 seconds</strong>. You may speak freely in your own words.</p>
+            </div>
+
             <button
               className="btn-record-start"
               onClick={startRecording}
@@ -620,6 +633,54 @@ const SpeechTest = () => {
         .btn-record-start:disabled {
           opacity: 0.5;
           cursor: not-allowed;
+        }
+        .test-prompt-card {
+          background: linear-gradient(135deg, #f0f4ff, #f8fbff);
+          border: 1.5px solid #bfdbfe;
+          border-radius: 16px;
+          padding: 20px 24px;
+          max-width: 520px;
+          text-align: left;
+        }
+        .prompt-label {
+          font-size: 0.8rem;
+          font-weight: 800;
+          color: var(--primary, #4a90e2);
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          margin-bottom: 10px;
+        }
+        .prompt-sentence {
+          font-size: 1rem;
+          color: #1e293b;
+          font-style: italic;
+          line-height: 1.6;
+          margin-bottom: 14px;
+          font-weight: 600;
+        }
+        .prompt-picture {
+          margin-bottom: 14px;
+        }
+        .cookie-scene {
+          background: white;
+          border-radius: 12px;
+          padding: 16px;
+          display: flex;
+          align-items: flex-start;
+          gap: 14px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .scene-icon { font-size: 2rem; flex-shrink: 0; }
+        .scene-hint {
+          font-size: 0.85rem;
+          color: #475569;
+          line-height: 1.6;
+          margin: 0;
+        }
+        .prompt-instruction {
+          font-size: 0.85rem;
+          color: #64748b;
+          margin: 0;
         }
         .btn-record-stop {
           display: flex;

@@ -17,7 +17,7 @@ const ClinicalTests = () => {
             id: 'mmse',
             category: 'Standardized Assessments',
             title: 'MMSE Assessment',
-            desc: 'Mini-Mental State Examination for orientation, memory, and attention.',
+            desc: 'Mini-Mental State Examination for orientation, memory, and attention. Demographically adjusted scoring.',
             duration: '10-15 min',
             icon: <Brain size={28} />,
             accent: 'blue',
@@ -27,7 +27,7 @@ const ClinicalTests = () => {
             id: 'moca',
             category: 'Standardized Assessments',
             title: 'MoCA Assessment',
-            desc: 'Montreal Cognitive Assessment for detecting mild cognitive impairment.',
+            desc: 'Montreal Cognitive Assessment for detecting mild cognitive impairment with normative adjustment.',
             duration: '15-20 min',
             icon: <Activity size={28} />,
             accent: 'purple',
@@ -37,23 +37,34 @@ const ClinicalTests = () => {
             id: 'speech',
             category: 'Digital Biomarkers',
             title: 'Speech Pattern Analysis',
-            desc: 'Automated analysis of linguistic markers and vocal characteristics.',
+            desc: 'Automated AI analysis of linguistic markers and vocal characteristics using ML model.',
             duration: '5 min',
             icon: <Mic size={28} />,
             accent: 'orange',
             path: '/speech-test'
         },
         {
-            id: 'visuospatial',
+            id: 'clock',
             category: 'Cognitive Exercises',
             title: 'Clock Drawing Task',
-            desc: 'Assessing executive function and visuospatial organization.',
+            desc: 'Interactive canvas test assessing executive function and visuospatial organization.',
             duration: '5 min',
-            icon: <FileText size={28} />,
+            icon: <Clock size={28} />,
             accent: 'green',
-            path: '/tests/moca'
-        }
+            path: '/tests/clock'
+        },
+        {
+            id: 'trail',
+            category: 'Cognitive Exercises',
+            title: 'Trail Making Test — A',
+            desc: 'Connect numbered dots in sequence. Tests processing speed and attention / concentration.',
+            duration: '3-5 min',
+            icon: <TrendingUp size={28} />,
+            accent: 'red',
+            path: '/tests/trail'
+        },
     ];
+
 
     return (
         <div className="tests-page container animate-fade-up">
@@ -133,6 +144,7 @@ const ClinicalTests = () => {
         .entry-purple { border-top-color: var(--accent); }
         .entry-orange { border-top-color: var(--warning); }
         .entry-green { border-top-color: var(--secondary); }
+        .entry-red { border-top-color: #ef4444; }
 
         .test-icon-v2 { 
           width: 56px; height: 56px; border-radius: 12px; background: var(--background); 

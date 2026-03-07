@@ -15,6 +15,8 @@ const mriRoutes = require("./routes/mriRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const doctorRoutes = require("./routes/doctorRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
+const doctorPortalRoutes = require("./routes/doctorPortalRoutes");
+const mlRoutes           = require("./routes/mlRoutes");
 
 const app = express();
 
@@ -93,13 +95,16 @@ app.get("/health", (req, res) => {
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
-app.use("/api/auth", authRoutes);
-app.use("/api/tests", testRoutes);
-app.use("/api/speech", speechRoutes);
-app.use("/api/mri", mriRoutes);
-app.use("/api/reports", reportRoutes);
-app.use("/api/doctors", doctorRoutes);
-app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/auth",          authRoutes);
+app.use("/api/tests",         testRoutes);
+app.use("/api/speech",        speechRoutes);
+app.use("/api/mri",           mriRoutes);
+app.use("/api/reports",       reportRoutes);
+app.use("/api/doctors",       doctorRoutes);
+app.use("/api/dashboard",     dashboardRoutes);
+app.use("/api/doctor-portal", doctorPortalRoutes);
+app.use("/api/ml",            mlRoutes);
+
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 app.use((req, res) => {

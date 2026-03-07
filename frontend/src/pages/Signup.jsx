@@ -60,7 +60,9 @@ const Signup = () => {
   const [form, setForm]     = useState({
     full_name: '', email: '', password: '',
     date_of_birth: '', gender: '', educational_qualification: '',
+    role: 'patient', doctor_secret_code: '',
   });
+
   const [agreed, setAgreed]   = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
@@ -89,13 +91,14 @@ const Signup = () => {
     setLoading(true);
     try {
       await signup(form);
-      navigate('/dashboard');
+      navigate(form.role === 'doctor' ? '/doctor-portal' : '/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Signup failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="auth-page">
@@ -236,7 +239,39 @@ const Signup = () => {
               </div>
             </div>
 
+            {/* Account Role */}
+            <div className="form-group">
+              <label>Account Type</label>
+              <div className="gender-grid">
+                <button type="button" className={`gender-btn ${form.role === 'patient' ? 'selected' : ''}`} onClick={() => setField('role', 'patient')}>
+                  <span className="gender-icon">🧑</span><span>Patient</span>
+                </button>
+                <button type="button" className={`gender-btn ${form.role === 'doctor' ? 'selected' : ''}`} onClick={() => setField('role', 'doctor')}>
+                  <span className="gender-icon">👨‍⚕️</span><span>Doctor</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Doctor Secret Code (only shown if role = doctor) */}
+            {form.role === 'doctor' && (
+              <div className="form-group">
+                <label>Doctor Registration Code <span className="required-star">*</span></label>
+                <p className="field-hint">Provided by your hospital administrator</p>
+                <div className="input-with-icon">
+                  <Shield size={18} />
+                  <input
+                    type="password"
+                    name="doctor_secret_code"
+                    placeholder="Enter doctor registration code"
+                    value={form.doctor_secret_code}
+                    onChange={handleChange}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Terms */}
+
             <div className="terms-agreement">
               <label className="checkbox-container">
                 <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />

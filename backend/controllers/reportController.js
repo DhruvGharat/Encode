@@ -44,7 +44,7 @@ exports.getClinicalSummary = async (req, res) => {
     // Fetch all test results
     const { data: testResults } = await supabase
       .from('test_results')
-      .select('test_type, score, max_score, risk_level, completed_at')
+      .select('test_type, score, max_score, risk_level, adjusted_score, adjusted_risk, norm_percentile, completed_at')
       .eq('user_id', userId)
       .order('completed_at', { ascending: false });
 
@@ -77,29 +77,55 @@ exports.getClinicalSummary = async (req, res) => {
     const latestSpeech = speechResults?.[0] || null;
     const latestMRI = mriResults?.[0] || null;
 
-    // Aggregate risk level (worst of all)
-    const riskPriority = { High: 3, Moderate: 2, Low: 1 };
-    const allRisks = [
-      latestMMSE?.risk_level,
-      latestMoCA?.risk_level,
-      latestSpeech?.risk_level,
-      latestMRI?.risk_level,
-    ].filter(Boolean);
+    // ── Weighted Risk Fusion ────────────────────────────────────────────────
+    // Clinical Tests: 40% (average of MMSE + MoCA adjusted risks)
+    // Speech Analysis: 30%
+    // MRI Scan: 30%
+    const riskScore = { 'Low': 1, 'Moderate': 2, 'High': 3 };
+    const scoreToRisk = (s) => s <= 1.5 ? 'Low' : s <= 2.4 ? 'Moderate' : 'High';
 
-    const overallRisk = allRisks.length > 0
-      ? allRisks.reduce((max, r) => riskPriority[r] > riskPriority[max] ? r : max, 'Low')
+    // Clinical component — average of available tests (MMSE + MoCA)
+    const clinicalScores = [latestMMSE, latestMoCA]
+      .filter(Boolean)
+      .map((r) => riskScore[r.adjusted_risk || r.risk_level] || 1);
+    const clinicalComponent = clinicalScores.length > 0
+      ? clinicalScores.reduce((a, b) => a + b, 0) / clinicalScores.length
+      : null;
+
+    // Speech component
+    const speechComponent = latestSpeech ? (riskScore[latestSpeech.risk_level] || 1) : null;
+
+    // MRI component
+    const mriComponent = latestMRI ? (riskScore[latestMRI.risk_level] || 1) : null;
+
+    // Build weighted average only from available modalities
+    let weightedSum    = 0;
+    let totalWeight    = 0;
+    if (clinicalComponent !== null) { weightedSum += clinicalComponent * 0.40; totalWeight += 0.40; }
+    if (speechComponent   !== null) { weightedSum += speechComponent   * 0.30; totalWeight += 0.30; }
+    if (mriComponent      !== null) { weightedSum += mriComponent      * 0.30; totalWeight += 0.30; }
+
+    const overallRisk = totalWeight > 0
+      ? scoreToRisk(weightedSum / totalWeight)
       : 'Low';
+
+    // Also compute a percentage for dashboard display (0-100)
+    const overallRiskPercent = totalWeight > 0
+      ? Math.round(((weightedSum / totalWeight - 1) / 2) * 100)
+      : 0;
 
     res.status(200).json({
       success: true,
       data: {
-        overall_risk: overallRisk,
+        overall_risk:         overallRisk,
+        overall_risk_percent: overallRiskPercent,
+        risk_weights: { clinical: 0.40, speech: 0.30, mri: 0.30 },
         scores: {
           MMSE: latestMMSE
-            ? { score: latestMMSE.score, max_score: latestMMSE.max_score, risk_level: latestMMSE.risk_level, date: latestMMSE.completed_at }
+            ? { score: latestMMSE.score, max_score: latestMMSE.max_score, risk_level: latestMMSE.risk_level, adjusted_score: latestMMSE.adjusted_score, adjusted_risk: latestMMSE.adjusted_risk, norm_percentile: latestMMSE.norm_percentile, date: latestMMSE.completed_at }
             : null,
           MoCA: latestMoCA
-            ? { score: latestMoCA.score, max_score: latestMoCA.max_score, risk_level: latestMoCA.risk_level, date: latestMoCA.completed_at }
+            ? { score: latestMoCA.score, max_score: latestMoCA.max_score, risk_level: latestMoCA.risk_level, adjusted_score: latestMoCA.adjusted_score, adjusted_risk: latestMoCA.adjusted_risk, norm_percentile: latestMoCA.norm_percentile, date: latestMoCA.completed_at }
             : null,
           speech: latestSpeech
             ? { stability_pct: latestSpeech.stability_pct, neural_latency: latestSpeech.neural_latency, risk_level: latestSpeech.risk_level, date: latestSpeech.submitted_at }
@@ -108,8 +134,8 @@ exports.getClinicalSummary = async (req, res) => {
             ? { hippocampal_vol: latestMRI.hippocampal_vol, atrophy_pct: latestMRI.atrophy_pct, risk_level: latestMRI.risk_level, date: latestMRI.analyzed_at }
             : null,
         },
-        reports: reports || [],
-        test_history: testResults || [],
+        reports:      reports      || [],
+        test_history: testResults  || [],
       },
     });
   } catch (err) {

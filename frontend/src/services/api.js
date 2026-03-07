@@ -54,4 +54,20 @@ export const doctorService = {
   cancelConsultation: (id)     => api.patch(`/doctors/consultations/${id}/cancel`),
 };
 
+// ─── Doctor Portal ───────────────────────────────────────────
+export const doctorPortalService = {
+  getMe:            ()               => api.get('/doctor-portal/me'),
+  getPatients:      ()               => api.get('/doctor-portal/patients'),
+  getPatient:       (id)             => api.get(`/doctor-portal/patients/${id}`),
+  prescribeMRI:     (data)           => api.post('/doctor-portal/prescriptions', data),
+  addNote:          (data)           => api.post('/doctor-portal/notes', data),
+};
+
+// ─── ML / Cognitive Risk Prediction ──────────────────────────
+export const mlService = {
+  // POST /api/ml/predict — returns demographically adjusted risk
+  predict: (payload) => api.post('/ml/predict', payload),
+  // { moca_score, cdr_sum? }
+};
+
 export default api;

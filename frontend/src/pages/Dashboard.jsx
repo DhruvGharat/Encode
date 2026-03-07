@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { TrendingUp, Clock, Brain, Mic, Upload, FileText, ArrowRight, Activity, AlertCircle, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { TrendingUp, Clock, Brain, Mic, Upload, FileText, ArrowRight, Activity, AlertCircle, ChevronRight, CheckCircle2, Cpu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { dashboardService } from '../services/api';
@@ -136,7 +136,57 @@ const Dashboard = () => {
             {mmse && <p className="description-text">Latest MMSE: <strong>{mmse.score}/{mmse.max_score}</strong> · MoCA: <strong>{moca?.score ?? '--'}/{moca?.max_score ?? 30}</strong></p>}
           </div>
 
-          {/* Recent Activity */}
+          {/* AI Risk Panel — shown if MoCA data exists */}
+          {moca && (
+            <div className="card-modern ai-risk-card">
+              <div className="ai-risk-header">
+                <Cpu size={18} color="#8b5cf6" />
+                <h3>AI Risk Assessment</h3>
+              </div>
+              <div className="ai-risk-body">
+                <div className="ai-risk-score-row">
+                  <span className="ai-risk-label">MoCA Score</span>
+                  <span className="ai-risk-val">{moca.score}<small>/{moca.max_score}</small></span>
+                </div>
+                {moca.norm_percentile != null && (
+                  <div className="ai-risk-score-row">
+                    <span className="ai-risk-label">Your Percentile</span>
+                    <span className="ai-risk-val" style={{ color: moca.norm_percentile < 16 ? '#ef4444' : '#10b981' }}>
+                      {moca.norm_percentile}<small>th</small>
+                    </span>
+                  </div>
+                )}
+                <div className="ai-norm-bar-track">
+                  <div className="ai-norm-bar-fill" style={{
+                    width: `${moca.norm_percentile ?? 50}%`,
+                    background: moca.norm_percentile < 16 ? '#ef4444' : moca.norm_percentile < 30 ? '#f59e0b' : '#10b981'
+                  }} />
+                </div>
+                <div className="ai-risk-badge" style={{
+                  background: moca.adjusted_risk === 'High' ? '#fef2f2' : moca.adjusted_risk === 'Moderate' ? '#fffbeb' : '#f0fdf4',
+                  color:      moca.adjusted_risk === 'High' ? '#ef4444' : moca.adjusted_risk === 'Moderate' ? '#d97706' : '#10b981',
+                }}>
+                  {moca.adjusted_risk || moca.risk_level} Risk (Adjusted)
+                </div>
+              </div>
+              <button className="btn-full-outline" onClick={() => navigate('/reports')} style={{ marginTop: 12 }}>View Full Report</button>
+              <style>{`
+                .ai-risk-card { padding: 20px; }
+                .ai-risk-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+                .ai-risk-header h3 { margin: 0; font-size: 0.95rem; color: #4c1d95; }
+                .ai-risk-body { display: flex; flex-direction: column; gap: 10px; }
+                .ai-risk-score-row { display: flex; justify-content: space-between; align-items: baseline; }
+                .ai-risk-label { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; }
+                .ai-risk-val { font-size: 1.4rem; font-weight: 800; color: var(--text-main); }
+                .ai-risk-val small { font-size: 0.75rem; color: var(--text-muted); }
+                .ai-norm-bar-track { height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden; }
+                .ai-norm-bar-fill { height: 100%; border-radius: 99px; transition: width 1.2s ease; }
+                .ai-risk-badge { text-align: center; padding: 8px; border-radius: 10px; font-weight: 700; font-size: 0.85rem; }
+              `}</style>
+            </div>
+          )}
+
+
           <div className="card-modern shadow-soft-sm">
             <div className="header-flex">
               <h3>Recent Results</h3>

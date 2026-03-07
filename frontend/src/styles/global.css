@@ -179,3 +179,11 @@ a:focus-visible {
     outline: 3px solid var(--accent);
     outline-offset: 4px;
 }
+
+/* Utility Classes */
+.mt-4  { margin-top: 32px; }
+.mt-2  { margin-top: 16px; }
+.mb-2  { margin-bottom: 16px; }
+.text-primary   { color: var(--primary); }
+.text-secondary { color: var(--secondary); }
+.text-muted     { color: var(--text-muted); }

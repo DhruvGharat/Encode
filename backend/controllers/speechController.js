@@ -40,7 +40,7 @@ exports.uploadSpeech = async (req, res) => {
     // Run ML Model Inference
     const modelDir = path.join(__dirname, "../Speech_model");
     const pythonPath =
-      "C:/Users/Kaustubh/AppData/Local/Programs/Python/Python313/python.exe";
+      process.env.PYTHON_PATH || "python3";
 
     let mlResult;
     try {

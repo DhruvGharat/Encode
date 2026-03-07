@@ -189,7 +189,7 @@ exports.submitMMSE = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @route   POST /api/tests/moca
-// @desc    Submit MoCA test answers, calculate score, save to DB
+// @desc    Submit MoCA test answers, calculate score + ML risk, save to DB
 // @access  Protected
 // ─────────────────────────────────────────────────────────────────────────────
 exports.submitMoCA = async (req, res) => {
@@ -213,7 +213,7 @@ exports.submitMoCA = async (req, res) => {
     const risk_level     = getRiskLevel(score, MAX_SCORE, 'MoCA');
     const section_scores = computeSectionScores(answers, questions);
 
-    // ── Demographic adjustment ────────────────────────────────────────────────
+    // ── Demographic adjustment (rule-based) ──────────────────────────────────
     const demographics = await fetchUserDemographics(req.user.id);
     let adjustmentData = {};
 
@@ -235,6 +235,27 @@ exports.submitMoCA = async (req, res) => {
         norm_percentile: adj.normPercentile,
         adjusted_risk:   adj.adjustedRisk,
       };
+    }
+
+    // ── ML Model Inference ───────────────────────────────────────────────────
+    let mlResult = null;
+    try {
+      const { runCognitiveInference, EDU_YEARS, GENDER_TO_SEX } = require('./mlController');
+      if (demographics && demographics.age) {
+        const eduYears  = EDU_YEARS[demographics.educationLevel] ?? 12;
+        const sex       = GENDER_TO_SEX[demographics.gender] ?? 1;
+        mlResult = await runCognitiveInference(
+          demographics.age, sex, eduYears, score, 0
+        );
+      }
+    } catch (mlErr) {
+      console.warn('[ML Inference skipped]', mlErr.message);
+    }
+
+    // If ML succeeded, use its (more accurate) percentile to override rule-based
+    if (mlResult && !mlResult.error) {
+      adjustmentData.norm_percentile = mlResult.norm_percentile;
+      adjustmentData.adjusted_risk   = mlResult.risk_level;
     }
 
     const { data: result, error } = await supabase
@@ -271,14 +292,26 @@ exports.submitMoCA = async (req, res) => {
       });
       demographicSummary = {
         ...adj,
-        interpretation: generateInterpretation(adj, 'MoCA'),
+        interpretation: mlResult?.interpretation || generateInterpretation(adj, 'MoCA'),
+        // ML overrides
+        ...(mlResult && !mlResult.error ? {
+          normPercentile:  mlResult.norm_percentile,
+          adjustedRisk:    mlResult.risk_level,
+          normMean:        mlResult.expected_moca,
+          zScore:          mlResult.adjusted_zscore,
+          ml_probability:  mlResult.risk_probability,
+        } : {}),
       };
     }
 
+    // Report summary includes ML confidence
+    const mlStr = mlResult && !mlResult.error
+      ? ` ML Risk Confidence: ${Math.round(mlResult.risk_probability * 100)}%.`
+      : '';
     const reportSummary = demographicSummary
       ? `MoCA Score: ${score}/${MAX_SCORE}. Adjusted Score: ${demographicSummary.adjustedScore}. ` +
-        `Normative Percentile: ${demographicSummary.normPercentile}th. Risk: ${demographicSummary.adjustedRisk}.`
-      : `MoCA Score: ${score}/${MAX_SCORE}. Risk Level: ${risk_level}.`;
+        `Normative Percentile: ${demographicSummary.normPercentile}th. Risk: ${demographicSummary.adjustedRisk}.${mlStr}`
+      : `MoCA Score: ${score}/${MAX_SCORE}. Risk Level: ${risk_level}.${mlStr}`;
 
     await supabase.from('reports').insert({
       user_id:        req.user.id,
@@ -294,11 +327,19 @@ exports.submitMoCA = async (req, res) => {
       success: true,
       data: {
         score,
-        max_score:          MAX_SCORE,
+        max_score:              MAX_SCORE,
         risk_level,
         section_scores,
-        result_id:          result.id,
+        result_id:              result.id,
         demographic_adjustment: demographicSummary,
+        ml_prediction:          mlResult && !mlResult.error ? {
+          risk_level:       mlResult.risk_level,
+          risk_probability: mlResult.risk_probability,
+          expected_moca:    mlResult.expected_moca,
+          adjusted_zscore:  mlResult.adjusted_zscore,
+          norm_percentile:  mlResult.norm_percentile,
+          interpretation:   mlResult.interpretation,
+        } : null,
       },
     });
   } catch (err) {
@@ -308,6 +349,7 @@ exports.submitMoCA = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+
 // @route   GET /api/tests/history
 // @desc    Get all test results for the logged-in user
 // @access  Protected

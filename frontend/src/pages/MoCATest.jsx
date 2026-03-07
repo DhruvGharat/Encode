@@ -1,12 +1,98 @@
 import React, { useState } from 'react';
 import {
   CheckCircle2, Clock, Activity, ArrowRight, AlertCircle,
-  ChevronLeft, ChevronRight, Users, Info,
+  ChevronLeft, ChevronRight, Users, Info, Cpu, TrendingDown,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { mocaQuestions, calculateScore, interpretMOCA } from '../data/questions';
 import { testService } from '../services/api';
 import QuestionCard from '../components/QuestionCard';
+
+// ─── ML Prediction Card ───────────────────────────────────────────────────────
+const MLPredictionCard = ({ ml }) => {
+  if (!ml) return null;
+
+  const riskColors = { Low: '#10b981', Moderate: '#f59e0b', High: '#ef4444' };
+  const color      = riskColors[ml.risk_level] || '#6b7280';
+  const pct        = Math.round(ml.risk_probability * 100);
+
+  return (
+    <div className="ml-card">
+      <div className="ml-card-header">
+        <Cpu size={18} color="#8b5cf6" />
+        <h3>AI Risk Model — NACC Dataset (55,268 patients)</h3>
+        <span className="ml-badge">XGBoost · ROC-AUC 97.4%</span>
+      </div>
+
+      <div className="ml-stats">
+        {/* Probability bar */}
+        <div className="ml-prob-block">
+          <span className="ml-stat-label">Dementia Risk Probability</span>
+          <div className="ml-prob-bar-track">
+            <div className="ml-prob-bar-fill" style={{ width: `${pct}%`, background: color }} />
+          </div>
+          <div className="ml-prob-row">
+            <span className="ml-prob-value" style={{ color }}>{pct}%</span>
+            <span className="ml-risk-badge" style={{ background: `${color}20`, color }}>
+              {ml.risk_level} Risk
+            </span>
+          </div>
+        </div>
+
+        {/* Stats grid */}
+        <div className="ml-mini-grid">
+          <div className="ml-mini-stat">
+            <span className="ml-mini-label">Expected MoCA</span>
+            <span className="ml-mini-val">{ml.expected_moca?.toFixed(1)}</span>
+          </div>
+          <div className="ml-mini-stat">
+            <span className="ml-mini-label">Your MoCA</span>
+            <span className="ml-mini-val">{ml.actual_moca ?? '—'}</span>
+          </div>
+          <div className="ml-mini-stat">
+            <span className="ml-mini-label">Z-Score</span>
+            <span className="ml-mini-val" style={{ color: (ml.adjusted_zscore ?? 0) < -1 ? '#ef4444' : '#10b981' }}>
+              {(ml.adjusted_zscore ?? 0) > 0 ? '+' : ''}{ml.adjusted_zscore}
+            </span>
+          </div>
+          <div className="ml-mini-stat">
+            <span className="ml-mini-label">Percentile</span>
+            <span className="ml-mini-val">{ml.norm_percentile}th</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="ml-interpretation">
+        <TrendingDown size={14} />
+        <p>{ml.interpretation}</p>
+      </div>
+
+      <style>{`
+        .ml-card { background: linear-gradient(135deg, #faf5ff 0%, #f0f9ff 100%); border: 1px solid #c4b5fd; border-radius: 16px; padding: 22px; margin-top: 8px; text-align: left; }
+        .ml-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+        .ml-card-header h3 { font-size: 0.9rem; font-weight: 700; color: #4c1d95; margin: 0; flex: 1; }
+        .ml-badge { font-size: 0.7rem; font-weight: 700; background: #ede9fe; color: #6d28d9; padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
+        .ml-stats { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
+        .ml-prob-block { background: white; border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px rgba(139,92,246,0.08); }
+        .ml-stat-label { font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 10px; }
+        .ml-prob-bar-track { height: 10px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin-bottom: 10px; }
+        .ml-prob-bar-fill { height: 100%; border-radius: 999px; transition: width 1.4s cubic-bezier(0.23, 1, 0.32, 1); }
+        .ml-prob-row { display: flex; align-items: center; justify-content: space-between; }
+        .ml-prob-value { font-size: 1.8rem; font-weight: 800; line-height: 1; }
+        .ml-risk-badge { font-size: 0.8rem; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
+        .ml-mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .ml-mini-stat { background: white; border-radius: 10px; padding: 10px 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+        .ml-mini-label { font-size: 0.7rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; display: block; margin-bottom: 3px; }
+        .ml-mini-val { font-size: 1.2rem; font-weight: 800; color: #1e293b; }
+        .ml-interpretation { display: flex; gap: 8px; align-items: flex-start; background: white; border-radius: 10px; padding: 12px; font-size: 0.82rem; color: #334155; line-height: 1.6; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+        .ml-interpretation svg { color: #8b5cf6; flex-shrink: 0; margin-top: 2px; }
+        .ml-interpretation p { margin: 0; }
+      `}</style>
+    </div>
+  );
+};
+
+
 
 // ─── Demographic Insight Panel (shared logic, MoCA variant) ──────────────────
 const DemographicInsight = ({ adj }) => {
@@ -183,6 +269,12 @@ const MoCATest = () => {
 
                 {/* Demographic Adjustment Panel */}
                 <DemographicInsight adj={result?.demographic_adjustment} />
+
+                {/* ML Model Prediction Card */}
+                {result?.ml_prediction && (
+                  <MLPredictionCard ml={result.ml_prediction} />
+                )}
+
               </div>
 
               <div className="action-footer-v2">
