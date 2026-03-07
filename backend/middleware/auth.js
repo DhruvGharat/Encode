@@ -35,7 +35,7 @@ const protect = async (req, res, next) => {
     // Fetch fresh user data from Supabase
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, email, full_name, patient_id, date_of_birth, gender')
+      .select('id, email, full_name, patient_id, date_of_birth, gender, educational_qualification')
       .eq('id', decoded.id)
       .single();
 

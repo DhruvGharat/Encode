@@ -1,8 +1,8 @@
 const supabase = require('../config/supabase');
+const { calculateAdjustedScore, generateInterpretation } = require('../utils/demographicScoring');
 
-// ─── Helper: Determine risk level from score ──────────────────────────────────
+// ─── Helper: Determine raw risk level from score ──────────────────────────────
 const getRiskLevel = (score, maxScore, testType) => {
-  const pct = (score / maxScore) * 100;
   if (testType === 'MMSE') {
     if (score >= 24) return 'Low';
     if (score >= 18) return 'Moderate';
@@ -13,6 +13,7 @@ const getRiskLevel = (score, maxScore, testType) => {
     if (score >= 18) return 'Moderate';
     return 'High';
   }
+  const pct = (score / maxScore) * 100;
   return pct >= 70 ? 'Low' : pct >= 40 ? 'Moderate' : 'High';
 };
 
@@ -36,6 +37,33 @@ const genReportId = () => {
   return `REP-${Math.floor(1000 + Math.random() * 9000)}`;
 };
 
+// ─── Helper: Fetch user profile for demographic scoring ───────────────────────
+const fetchUserDemographics = async (userId) => {
+  const { data: user } = await supabase
+    .from('users')
+    .select('date_of_birth, gender, educational_qualification')
+    .eq('id', userId)
+    .single();
+
+  if (!user) return null;
+
+  // Calculate age from date_of_birth
+  let age = null;
+  if (user.date_of_birth) {
+    const dob  = new Date(user.date_of_birth);
+    const today = new Date();
+    age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  }
+
+  return {
+    age,
+    gender: user.gender,
+    educationLevel: user.educational_qualification,
+  };
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // @route   POST /api/tests/mmse
 // @desc    Submit MMSE test answers, calculate score, save to DB
@@ -44,7 +72,6 @@ const genReportId = () => {
 exports.submitMMSE = async (req, res) => {
   try {
     const { answers, duration_secs, questions } = req.body;
-    // `questions` sent from the frontend contains: id, section, correctAnswer, score
 
     if (!answers || !questions) {
       return res.status(400).json({
@@ -55,14 +82,38 @@ exports.submitMMSE = async (req, res) => {
 
     const MAX_SCORE = 30;
 
-    // Calculate total score
+    // Calculate raw score
     let score = 0;
     questions.forEach((q) => {
       if (answers[q.id] === q.correctAnswer) score += q.score;
     });
 
-    const risk_level = getRiskLevel(score, MAX_SCORE, 'MMSE');
+    const risk_level    = getRiskLevel(score, MAX_SCORE, 'MMSE');
     const section_scores = computeSectionScores(answers, questions);
+
+    // ── Demographic adjustment ────────────────────────────────────────────────
+    const demographics = await fetchUserDemographics(req.user.id);
+    let adjustmentData = {};
+
+    if (demographics && demographics.age && demographics.educationLevel) {
+      const adj = calculateAdjustedScore({
+        rawScore:       score,
+        maxScore:       MAX_SCORE,
+        testType:       'MMSE',
+        age:            demographics.age,
+        gender:         demographics.gender,
+        educationLevel: demographics.educationLevel,
+      });
+
+      adjustmentData = {
+        adjusted_score:  adj.adjustedScore,
+        education_years: adj.educationYears,
+        age_at_test:     adj.ageAtTest,
+        gender_at_test:  adj.genderAtTest,
+        norm_percentile: adj.normPercentile,
+        adjusted_risk:   adj.adjustedRisk,
+      };
+    }
 
     // Save result to Supabase
     const { data: result, error } = await supabase
@@ -76,6 +127,7 @@ exports.submitMMSE = async (req, res) => {
         answers,
         section_scores,
         duration_secs: duration_secs || null,
+        ...adjustmentData,
       })
       .select()
       .single();
@@ -85,25 +137,48 @@ exports.submitMMSE = async (req, res) => {
       return res.status(500).json({ success: false, message: 'Failed to save test result.' });
     }
 
+    // Build rich interpretation for response
+    let demographicSummary = null;
+    if (demographics && demographics.age && demographics.educationLevel) {
+      const adj = calculateAdjustedScore({
+        rawScore:       score,
+        maxScore:       MAX_SCORE,
+        testType:       'MMSE',
+        age:            demographics.age,
+        gender:         demographics.gender,
+        educationLevel: demographics.educationLevel,
+      });
+      demographicSummary = {
+        ...adj,
+        interpretation: generateInterpretation(adj, 'MMSE'),
+      };
+    }
+
     // Auto-generate a report entry
+    const reportSummary = demographicSummary
+      ? `MMSE Score: ${score}/${MAX_SCORE}. Adjusted Score: ${demographicSummary.adjustedScore}. ` +
+        `Normative Percentile: ${demographicSummary.normPercentile}th. Risk: ${demographicSummary.adjustedRisk}.`
+      : `MMSE Score: ${score}/${MAX_SCORE}. Risk Level: ${risk_level}.`;
+
     await supabase.from('reports').insert({
-      user_id: req.user.id,
-      report_id: genReportId(),
-      title: 'MMSE Assessment Summary',
-      report_type: 'Clinical Test',
+      user_id:        req.user.id,
+      report_id:      genReportId(),
+      title:          'MMSE Assessment Summary',
+      report_type:    'Clinical Test',
       test_result_id: result.id,
-      risk_level,
-      summary: `MMSE Score: ${score}/${MAX_SCORE}. Risk Level: ${risk_level}.`,
+      risk_level:     demographicSummary?.adjustedRisk || risk_level,
+      summary:        reportSummary,
     });
 
     res.status(201).json({
       success: true,
       data: {
         score,
-        max_score: MAX_SCORE,
+        max_score:          MAX_SCORE,
         risk_level,
         section_scores,
-        result_id: result.id,
+        result_id:          result.id,
+        demographic_adjustment: demographicSummary,
       },
     });
   } catch (err) {
@@ -135,8 +210,32 @@ exports.submitMoCA = async (req, res) => {
       if (answers[q.id] === q.correctAnswer) score += q.score;
     });
 
-    const risk_level = getRiskLevel(score, MAX_SCORE, 'MoCA');
+    const risk_level     = getRiskLevel(score, MAX_SCORE, 'MoCA');
     const section_scores = computeSectionScores(answers, questions);
+
+    // ── Demographic adjustment ────────────────────────────────────────────────
+    const demographics = await fetchUserDemographics(req.user.id);
+    let adjustmentData = {};
+
+    if (demographics && demographics.age && demographics.educationLevel) {
+      const adj = calculateAdjustedScore({
+        rawScore:       score,
+        maxScore:       MAX_SCORE,
+        testType:       'MoCA',
+        age:            demographics.age,
+        gender:         demographics.gender,
+        educationLevel: demographics.educationLevel,
+      });
+
+      adjustmentData = {
+        adjusted_score:  adj.adjustedScore,
+        education_years: adj.educationYears,
+        age_at_test:     adj.ageAtTest,
+        gender_at_test:  adj.genderAtTest,
+        norm_percentile: adj.normPercentile,
+        adjusted_risk:   adj.adjustedRisk,
+      };
+    }
 
     const { data: result, error } = await supabase
       .from('test_results')
@@ -149,6 +248,7 @@ exports.submitMoCA = async (req, res) => {
         answers,
         section_scores,
         duration_secs: duration_secs || null,
+        ...adjustmentData,
       })
       .select()
       .single();
@@ -158,24 +258,47 @@ exports.submitMoCA = async (req, res) => {
       return res.status(500).json({ success: false, message: 'Failed to save test result.' });
     }
 
+    // Build rich interpretation for response
+    let demographicSummary = null;
+    if (demographics && demographics.age && demographics.educationLevel) {
+      const adj = calculateAdjustedScore({
+        rawScore:       score,
+        maxScore:       MAX_SCORE,
+        testType:       'MoCA',
+        age:            demographics.age,
+        gender:         demographics.gender,
+        educationLevel: demographics.educationLevel,
+      });
+      demographicSummary = {
+        ...adj,
+        interpretation: generateInterpretation(adj, 'MoCA'),
+      };
+    }
+
+    const reportSummary = demographicSummary
+      ? `MoCA Score: ${score}/${MAX_SCORE}. Adjusted Score: ${demographicSummary.adjustedScore}. ` +
+        `Normative Percentile: ${demographicSummary.normPercentile}th. Risk: ${demographicSummary.adjustedRisk}.`
+      : `MoCA Score: ${score}/${MAX_SCORE}. Risk Level: ${risk_level}.`;
+
     await supabase.from('reports').insert({
-      user_id: req.user.id,
-      report_id: genReportId(),
-      title: 'MoCA Assessment Summary',
-      report_type: 'Clinical Test',
+      user_id:        req.user.id,
+      report_id:      genReportId(),
+      title:          'MoCA Assessment Summary',
+      report_type:    'Clinical Test',
       test_result_id: result.id,
-      risk_level,
-      summary: `MoCA Score: ${score}/${MAX_SCORE}. Risk Level: ${risk_level}.`,
+      risk_level:     demographicSummary?.adjustedRisk || risk_level,
+      summary:        reportSummary,
     });
 
     res.status(201).json({
       success: true,
       data: {
         score,
-        max_score: MAX_SCORE,
+        max_score:          MAX_SCORE,
         risk_level,
         section_scores,
-        result_id: result.id,
+        result_id:          result.id,
+        demographic_adjustment: demographicSummary,
       },
     });
   } catch (err) {
@@ -195,14 +318,14 @@ exports.getTestHistory = async (req, res) => {
 
     let query = supabase
       .from('test_results')
-      .select('id, test_type, score, max_score, risk_level, section_scores, duration_secs, completed_at')
+      .select('id, test_type, score, max_score, risk_level, adjusted_score, norm_percentile, adjusted_risk, section_scores, duration_secs, age_at_test, education_years, completed_at')
       .eq('user_id', req.user.id)
       .order('completed_at', { ascending: false })
       .range(Number(offset), Number(offset) + Number(limit) - 1);
 
     if (test_type) query = query.eq('test_type', test_type.toUpperCase());
 
-    const { data: results, error, count } = await query;
+    const { data: results, error } = await query;
 
     if (error) {
       return res.status(500).json({ success: false, message: 'Failed to fetch test history.' });
@@ -224,7 +347,7 @@ exports.getLatestScores = async (req, res) => {
   try {
     const { data: results, error } = await supabase
       .from('test_results')
-      .select('test_type, score, max_score, risk_level, completed_at')
+      .select('test_type, score, max_score, risk_level, adjusted_score, norm_percentile, adjusted_risk, completed_at')
       .eq('user_id', req.user.id)
       .order('completed_at', { ascending: false });
 
@@ -232,7 +355,6 @@ exports.getLatestScores = async (req, res) => {
       return res.status(500).json({ success: false, message: 'Failed to fetch scores.' });
     }
 
-    // Pick the most recent of each type
     const latestMMSE = results.find((r) => r.test_type === 'MMSE') || null;
     const latestMoCA = results.find((r) => r.test_type === 'MoCA') || null;
 

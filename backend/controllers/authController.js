@@ -29,6 +29,7 @@ const sendToken = (user, statusCode, res) => {
       patient_id: user.patient_id,
       date_of_birth: user.date_of_birth,
       gender: user.gender,
+      educational_qualification: user.educational_qualification,
     },
   });
 };
@@ -40,7 +41,7 @@ const sendToken = (user, statusCode, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.signup = async (req, res) => {
   try {
-    const { full_name, email, password, date_of_birth, gender } = req.body;
+    const { full_name, email, password, date_of_birth, gender, educational_qualification } = req.body;
 
     // --- Validation ---
     if (!full_name || !email || !password) {
@@ -88,8 +89,9 @@ exports.signup = async (req, res) => {
         patient_id,
         date_of_birth: date_of_birth || null,
         gender: gender || null,
+        educational_qualification: educational_qualification || null,
       })
-      .select('id, full_name, email, patient_id, date_of_birth, gender')
+      .select('id, full_name, email, patient_id, date_of_birth, gender, educational_qualification')
       .single();
 
     if (error) {
@@ -126,7 +128,7 @@ exports.login = async (req, res) => {
     // --- Fetch user including password_hash ---
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, full_name, email, password_hash, patient_id, date_of_birth, gender')
+      .select('id, full_name, email, password_hash, patient_id, date_of_birth, gender, educational_qualification')
       .eq('email', email.toLowerCase().trim())
       .single();
 
@@ -178,19 +180,20 @@ exports.getMe = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.updateProfile = async (req, res) => {
   try {
-    const { full_name, date_of_birth, gender } = req.body;
+    const { full_name, date_of_birth, gender, educational_qualification } = req.body;
 
     const updates = {};
     if (full_name) updates.full_name = full_name.trim();
     if (date_of_birth) updates.date_of_birth = date_of_birth;
     if (gender) updates.gender = gender;
+    if (educational_qualification) updates.educational_qualification = educational_qualification;
     updates.updated_at = new Date().toISOString();
 
     const { data: updatedUser, error } = await supabase
       .from('users')
       .update(updates)
       .eq('id', req.user.id)
-      .select('id, full_name, email, patient_id, date_of_birth, gender')
+      .select('id, full_name, email, patient_id, date_of_birth, gender, educational_qualification')
       .single();
 
     if (error) {
