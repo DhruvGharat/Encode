@@ -1,5 +1,8 @@
 const supabase = require('../config/supabase');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { execFile } = require('child_process');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @route   POST /api/mri/upload
@@ -17,6 +20,7 @@ exports.uploadMRI = async (req, res) => {
 
     const userId = req.user.id;
     const uploadedScans = [];
+    const errorsList = [];
 
     for (const file of req.files) {
       const ext = path.extname(file.originalname).toLowerCase();
@@ -29,34 +33,64 @@ exports.uploadMRI = async (req, res) => {
         });
       }
 
-      // --- Upload to Supabase Storage ---
-      const storagePath = `${userId}/${Date.now()}-${file.originalname}`;
-
-      const { error: storageError } = await supabase.storage
-        .from('mri-scans')
-        .upload(storagePath, file.buffer, {
-          contentType: file.mimetype,
-          upsert: false,
-        });
-
-      if (storageError) {
-        console.error('[MRI Storage Error]', storageError);
+      // --- Save to Local Storage ---
+      const fileName = `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
+      const localFilePath = path.join(__dirname, '..', 'uploads', 'mri', fileName);
+      
+      try {
+        fs.writeFileSync(localFilePath, file.buffer);
+      } catch (err) {
+        console.error('[MRI Local Storage Error]', err);
+        errorsList.push(`Local Storage Error for ${file.originalname}: ${err.message}`);
         continue; // Skip this file but continue with others
       }
 
-      const { data: urlData } = supabase.storage
-        .from('mri-scans')
-        .getPublicUrl(storagePath);
+      // Generate local URL
+      const file_url = `${req.protocol}://${req.get('host')}/uploads/mri/${fileName}`;
 
-      const file_url = urlData?.publicUrl || null;
+      // --- Execute AI Inference Model ---
+      let risk_level = 'Unknown';
+      let hippocampal_vol = 0;
+      let atrophy_pct = 0;
+      let ai_insights = 'No prediction available.';
 
-      // --- Mock AI Analysis Results ---
-      // In production, send to a neuroimaging ML pipeline (e.g., FreeSurfer, 3D U-Net)
-      const hippocampal_vol = parseFloat((3000 + Math.random() * 1200).toFixed(1)); // mm³
-      const atrophy_pct     = parseFloat((Math.random() * 20).toFixed(1));           // %
-      let risk_level = 'Low';
-      if (atrophy_pct > 10) risk_level = 'Moderate';
-      if (atrophy_pct > 15) risk_level = 'High';
+      try {
+        const pythonScriptPath = path.join(__dirname, '..', 'ml_model', 'inference_mri.py');
+        
+        // Wrap execFile in a Promise
+        const aiResult = await new Promise((resolve, reject) => {
+          execFile('python', [pythonScriptPath, '--image', localFilePath], (error, stdout, stderr) => {
+            if (error) {
+              console.error('[Python Execution Error]', error, stderr);
+              resolve({ error: error.message });
+            } else {
+              try {
+                const result = JSON.parse(stdout);
+                resolve(result);
+              } catch (parseErr) {
+                console.error('[Python Output Parse Error]', parseErr, stdout);
+                resolve({ error: 'Invalid JSON from Python script' });
+              }
+            }
+          });
+        });
+
+        if (!aiResult.error && aiResult.risk_level) {
+          risk_level = aiResult.risk_level;
+          hippocampal_vol = aiResult.hippocampal_vol || 0;
+          atrophy_pct = aiResult.atrophy_pct || 0;
+          ai_insights = `Diagnosis: ${aiResult.clinical_diagnosis || 'N/A'} | Confidence: ${(aiResult.confidence * 100).toFixed(1)}% | Estimated Atrophy: ${atrophy_pct}%`;
+        } else {
+           console.error('[AI Model Failure]', aiResult);
+           // Fallback to basic metrics if AI fails
+           hippocampal_vol = parseFloat((3000 + Math.random() * 1200).toFixed(1));
+           atrophy_pct = parseFloat((Math.random() * 20).toFixed(1));
+           risk_level = atrophy_pct > 15 ? 'High' : (atrophy_pct > 10 ? 'Moderate' : 'Low');
+           ai_insights = 'Fallback mock data generated due to AI failure.';
+        }
+      } catch (err) {
+        console.error('[Temp File/AI Error]', err);
+      }
 
       // --- Determine format ---
       const formatMap = {
@@ -81,7 +115,7 @@ exports.uploadMRI = async (req, res) => {
           hippocampal_vol,
           atrophy_pct,
           risk_level,
-          analysis_notes: `Hippocampal volume: ${hippocampal_vol} mm³. Atrophy: ${atrophy_pct}%.`,
+          analysis_notes: ai_insights,
           analyzed_at: new Date().toISOString(),
         })
         .select()
@@ -89,6 +123,7 @@ exports.uploadMRI = async (req, res) => {
 
       if (dbError) {
         console.error('[MRI DB Error]', dbError);
+        errorsList.push(`DB Error for ${file.originalname}: ${dbError.message}`);
         continue;
       }
 
@@ -100,7 +135,7 @@ exports.uploadMRI = async (req, res) => {
         report_type: 'MRI Insight',
         mri_scan_id: scanRecord.id,
         risk_level,
-        summary: `MRI scan analyzed. Hippocampal volume: ${hippocampal_vol} mm³. Atrophy: ${atrophy_pct}%.`,
+        summary: `MRI scan analyzed. Risk: ${risk_level}. ${ai_insights}`,
       });
 
       uploadedScans.push({
@@ -118,6 +153,7 @@ exports.uploadMRI = async (req, res) => {
       return res.status(500).json({
         success: false,
         message: 'All file uploads failed. Please try again.',
+        errors: errorsList,
       });
     }
 
